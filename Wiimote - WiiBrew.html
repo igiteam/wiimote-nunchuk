@@ -1,0 +1,2232 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html>
+<html lang="en-GB" dir="ltr" platform="macosx" style="--font-family: sans-serif; --font-weight: normal;"><head>
+    <title id="reader-title">Wiimote - WiiBrew</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src chrome:; img-src data: *; media-src *; object-src 'none'">
+    <meta content="text/html; charset=UTF-8" http-equiv="content-type">
+    <meta name="viewport" content="width=device-width; user-scalable=0">
+    <link rel="stylesheet" href="chrome://global/skin/design-system/tokens-brand.css">
+    <link rel="stylesheet" href="chrome://global/skin/aboutReader.css" type="text/css">
+    <link rel="localization" href="toolkit/about/aboutReader.ftl">
+    <link rel="localization" href="toolkit/branding/brandings.ftl">
+    <script type="module" src="chrome://global/content/reader/moz-slider.mjs"></script>
+    <script type="module" src="chrome://global/content/elements/moz-input-color.mjs"></script>
+    <script type="module" src="chrome://global/content/elements/named-deck.js"></script>
+  <link rel="stylesheet" href="chrome://global/skin/narrate.css"><link rel="shortcut icon" href="https://wiibrew.org/favicon.ico"></head>
+
+  <body class="light loaded" style="--content-width: 30em; --font-size: 20px;">
+    <div class="top-anchor"></div>
+
+    <div id="toolbar" class="toolbar-container scrolled">
+      <div class="toolbar reader-toolbar">
+        <div class="reader-controls" articledir="ltr">
+          <button class="close-button toolbar-button" aria-labelledby="toolbar-close" data-telemetry-id="reader-close">
+            <span class="hover-label" id="toolbar-close" data-l10n-id="about-reader-toolbar-close">Close Reader View</span>
+          </button>
+          <ul class="dropdown text-layout-dropdown">
+            <li>
+              <button class="dropdown-toggle toolbar-button text-layout-button" aria-labelledby="toolbar-text-layout-controls" data-telemetry-id="reader-text-layout-controls">
+                <span class="hover-label" id="toolbar-text-layout-controls" data-l10n-id="about-reader-toolbar-text-layout-controls">Text and layout</span>
+              </button>
+            </li>
+            <li class="dropdown-popup" id="text-layout-controls" tabindex="-1">
+              <h2 data-l10n-id="about-reader-text-header" id="about-reader-text-header">Text</h2>
+              <div id="text-size-controls">
+                <span data-l10n-id="about-reader-text-size-label" id="about-reader-text-size-label">Text size</span>
+                <div class="text-size-buttons buttonrow">
+                  <button class="text-size-minus-button" data-l10n-id="about-reader-toolbar-minus" data-telemetry-id="text-size-minus-button" title="Decrease font size"></button>
+                  <button class="text-size-plus-button" data-l10n-id="about-reader-toolbar-plus" data-telemetry-id="text-size-plus-button" title="Increase font size"></button>
+                </div>
+              </div>
+              <div id="font-controls">
+                <div id="font-type-dropdown" class="dropdown-selector">
+                  <label for="font-type-selector" data-l10n-id="about-reader-font-type-selector-label">Font</label>
+                  <select name="font-type-selector" id="font-type-selector" data-telemetry-id="font-type-selector"><option data-l10n-id="about-reader-font-type-sans-serif" value="sans-serif" selected="selected">Sans-serif</option><option data-l10n-id="about-reader-font-type-serif" value="serif">Serif</option><option data-l10n-id="about-reader-font-type-monospace" value="monospace">Monospace</option></select>
+                </div>
+                <div id="font-weight-dropdown" class="dropdown-selector">
+                  <label for="font-weight-selector" data-l10n-id="about-reader-font-weight-selector-label">Font weight</label>
+                  <select name="font-weight-selector" id="font-weight-selector" data-telemetry-id="font-weight-selector"><option data-l10n-id="about-reader-font-weight-regular" value="regular" selected="selected">Regular</option><option data-l10n-id="about-reader-font-weight-light" value="light">Light</option><option data-l10n-id="about-reader-font-weight-bold" value="bold">Bold</option></select>
+                </div>
+              </div>
+              <hr>
+              <h2 data-l10n-id="about-reader-layout-header" id="about-reader-layout-header">Layout</h2>
+              <div id="content-width-slider" class="slider-container"><moz-slider min="1" max="9" value="3" ticks="9" tick-labels="[]" data-l10n-id="about-reader-content-width-label" data-l10n-attrs="label" slider-icon="chrome://global/skin/reader/content-width-20.svg" data-telemetry-id="content-width-slider" label="Content width"></moz-slider></div>
+              <div id="line-spacing-slider" class="slider-container"><moz-slider min="1" max="9" value="4" ticks="9" tick-labels="[]" data-l10n-id="about-reader-line-spacing-label" data-l10n-attrs="label" slider-icon="chrome://global/skin/reader/line-spacing-20.svg" data-telemetry-id="line-spacing-slider" label="Line spacing"></moz-slider></div>
+              <hr>
+              <details id="about-reader-advanced-layout">
+                <summary class="accordion-header">
+                  <h2 data-l10n-id="about-reader-advanced-layout-header" id="about-reader-advanced-layout-header">Advanced</h2>
+                  <span class="chevron-icon"></span>
+                </summary>
+                <div id="character-spacing-slider" class="slider-container"><moz-slider min="1" max="9" value="1" ticks="9" tick-labels="[&quot;Standard&quot;, &quot;Wide&quot;]" data-l10n-id="about-reader-character-spacing-label" data-l10n-attrs="label" slider-icon="chrome://global/skin/reader/character-spacing-20.svg" data-telemetry-id="character-spacing-slider" label="Character spacing"></moz-slider></div>
+                <div id="word-spacing-slider" class="slider-container"><moz-slider min="1" max="9" value="1" ticks="9" tick-labels="[&quot;Standard&quot;, &quot;Wide&quot;]" data-l10n-id="about-reader-word-spacing-label" data-l10n-attrs="label" slider-icon="chrome://global/skin/reader/word-spacing-20.svg" data-telemetry-id="word-spacing-slider" label="Word spacing"></moz-slider></div>
+                <label for="text-alignment-buttons" data-l10n-id="about-reader-text-alignment-label">Text alignment</label>
+                <div class="text-alignment-buttons radiorow" id="text-alignment-buttons"><input id="radio-itemleft-align-button" type="radio" class="radio-button" name="text-alignment" data-telemetry-id="left-align-button" checked="checked"><label for="radio-itemleft-align-button" class="left-align-button" data-l10n-id="about-reader-text-alignment-left" checked="true" title="Align text left"></label><input id="radio-itemcenter-align-button" type="radio" class="radio-button" name="text-alignment" data-telemetry-id="center-align-button"><label for="radio-itemcenter-align-button" class="center-align-button" data-l10n-id="about-reader-text-alignment-center" title="Align text centre"></label><input id="radio-itemright-align-button" type="radio" class="radio-button" name="text-alignment" data-telemetry-id="right-align-button"><label for="radio-itemright-align-button" class="right-align-button" data-l10n-id="about-reader-text-alignment-right" title="Align text right"></label><input id="radio-itemjustify-align-button" type="radio" class="radio-button" name="text-alignment" data-telemetry-id="justify-align-button"><label for="radio-itemjustify-align-button" class="justify-align-button" data-l10n-id="about-reader-text-alignment-justify" title="Justify text"></label></div>
+                <button class="text-layout-reset-button reset-button" data-l10n-id="about-reader-reset-button">Reset defaults</button>
+              </details>
+            </li>
+          </ul>
+          <ul class="dropdown colors-dropdown">
+            <li>
+              <button class="dropdown-toggle toolbar-button colors-button" aria-labelledby="toolbar-color-controls" data-telemetry-id="reader-color-controls">
+                <span class="hover-label" id="toolbar-color-controls" data-l10n-id="about-reader-toolbar-theme-controls">Theme</span>
+              </button>
+            </li>
+            <li class="dropdown-popup" id="color-controls">
+              <h2 data-l10n-id="about-reader-colors-menu-header" id="about-reader-colors-menu-header">Theme</h2>
+              <button-group aria-labelledby="about-reader-colors-menu-header" role="tablist">
+                <button is="named-deck-button" deck="tabs-deck" name="fxtheme" data-l10n-id="about-reader-fxtheme-tab" data-telemetry-id="colors-menu-default-tab" id="tabs-deck-button-fxtheme" role="tab" aria-selected="true" tabindex="0" selected="">Default</button>
+                <button is="named-deck-button" deck="tabs-deck" name="customtheme" data-l10n-id="about-reader-customtheme-tab" data-telemetry-id="colors-menu-custom-tab" id="tabs-deck-button-customtheme" role="tab" aria-selected="false" tabindex="-1">Custom</button>
+              </button-group>
+              <named-deck id="tabs-deck" is-tabbed="" selected-view="fxtheme">
+                <div name="fxtheme" class="color-scheme-buttons radiorow" aria-labelledby="tabs-deck-button-fxtheme" role="tabpanel" slot="selected"><input id="radio-itemauto-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="auto-button" checked="checked"><label for="radio-itemauto-button" class="auto-button" data-l10n-id="about-reader-color-auto-theme" checked="true" title="Auto theme">Auto</label><input id="radio-itemlight-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="light-button"><label for="radio-itemlight-button" class="light-button" data-l10n-id="about-reader-color-light-theme" title="Light theme">Light</label><input id="radio-itemdark-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="dark-button"><label for="radio-itemdark-button" class="dark-button" data-l10n-id="about-reader-color-dark-theme" title="Dark theme">Dark</label><input id="radio-itemsepia-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="sepia-button"><label for="radio-itemsepia-button" class="sepia-button" data-l10n-id="about-reader-color-sepia-theme" title="Sepia theme">Sepia</label><input id="radio-itemcontrast-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="contrast-button"><label for="radio-itemcontrast-button" class="contrast-button" data-l10n-id="about-reader-color-contrast-theme" title="Contrast theme">Contrast</label><input id="radio-itemgray-button" type="radio" class="radio-button" name="color-scheme" data-telemetry-id="gray-button"><label for="radio-itemgray-button" class="gray-button" data-l10n-id="about-reader-color-gray-theme" title="Gray theme">Gray</label></div>
+                <div name="customtheme" aria-labelledby="tabs-deck-button-customtheme" role="tabpanel" slot="">
+                  <ul class="custom-colors-selection"><li><moz-input-color name="foreground" data-l10n-id="about-reader-custom-colors-foreground2" value="#14151A" data-l10n-attrs="label" label="Text" title="Edit colour"></moz-input-color></li><li><moz-input-color name="background" data-l10n-id="about-reader-custom-colors-background2" value="#FFFFFF" data-l10n-attrs="label" label="Background" title="Edit colour"></moz-input-color></li><li><moz-input-color name="unvisited-links" data-l10n-id="about-reader-custom-colors-unvisited-links2" value="#0060DF" data-l10n-attrs="label" label="Unvisited links" title="Edit colour"></moz-input-color></li><li><moz-input-color name="visited-links" data-l10n-id="about-reader-custom-colors-visited-links2" value="#321C64" data-l10n-attrs="label" label="Visited links" title="Edit colour"></moz-input-color></li><li><moz-input-color name="selection-highlight" data-l10n-id="about-reader-custom-colors-selection-highlight2" value="#FFFFCC" data-l10n-attrs="label" label="Highlighter for read aloud" title="Edit colour"></moz-input-color></li></ul>
+                  <button class="custom-colors-reset-button reset-button" data-l10n-id="about-reader-reset-button" hidden="">Reset defaults</button>
+                </div>
+              </named-deck>
+            </li>
+          </ul>
+        <ul class="dropdown narrate-dropdown"><li><button class="dropdown-toggle toolbar-button narrate-toggle" data-telemetry-id="reader-listen" aria-label="Read aloud (N)"><span class="hover-label">Read aloud (N)</span></button></li><li class="dropdown-popup"><h2 id="narrate-header">Read aloud</h2><div class="narrate-row narrate-control"><button class="narrate-skip-previous" disabled="disabled" aria-keyshortcuts="ArrowLeft" title="Back (←)"></button><button class="narrate-start-stop" aria-keyshortcuts="N" title="Start (N)"></button><button class="narrate-skip-next" disabled="disabled" aria-keyshortcuts="ArrowRight" title="Forward (→)"></button></div><div class="narrate-row narrate-rate"><span class="narrate-rate-icon slow" title="Slow down narration"></span><input class="narrate-rate-input" value="0" step="5" max="100" min="-100" type="range" aria-label="Choose a narration speed from -100 to 100, where 0 is the default speed." title="Speed"><span class="narrate-rate-icon fast" title="Speed up narration"></span></div><hr><h2 id="voice-header">Voice</h2><div class="narrate-row narrate-voices"><div class="voiceselect voice-select"><button class="select-toggle" aria-controls="voice-options" aria-expanded="false" role="combobox" aria-labelledby="voice-header">
+      <span class="current-voice">Default</span>
+    </button>
+    <div class="options" id="voice-options" role="listbox"><button data-value="automatic" class="option selected" tabindex="-1" role="option" aria-selected="true">Default</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.Alex" class="option" tabindex="-1" role="option">Alex (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.daniel.premium" class="option" tabindex="-1" role="option">Daniel (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.fiona" class="option" tabindex="-1" role="option">Fiona (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.Fred" class="option" tabindex="-1" role="option">Fred (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.karen" class="option" tabindex="-1" role="option">Karen (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.moira" class="option" tabindex="-1" role="option">Moira (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.rishi" class="option" tabindex="-1" role="option">Rishi (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.samantha" class="option" tabindex="-1" role="option">Samantha (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.tessa" class="option" tabindex="-1" role="option">Tessa (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.veena" class="option" tabindex="-1" role="option">Veena (English)</button><button data-value="urn:moz-tts:osx:com.apple.speech.synthesis.voice.Victoria" class="option" tabindex="-1" role="option">Victoria (English)</button></div></div></div></li></ul></div>
+      </div>
+    </div>
+
+    <div class="container" style="--line-height: 1.6em; --letter-spacing: 0.00em; --word-spacing: 0.00em; --text-alignment: start; --block-img-margin-right: unset; --block-img-margin-left: unset;" lang="en" dir="ltr">
+      <div class="header reader-header reader-show-element">
+        <a class="domain reader-domain" href="https://wiibrew.org/wiki/Wiimote#Bluetooth_Pairing">wiibrew.org</a>
+        <div class="domain-border"></div>
+        <h1 class="reader-title">Wiimote - WiiBrew</h1>
+        <div class="credits reader-credits"></div>
+        <div class="meta-data">
+          <div class="reader-estimated-time" data-l10n-args="{&quot;range&quot;:&quot;44–56&quot;,&quot;rangePlural&quot;:&quot;other&quot;}" data-l10n-id="about-reader-estimated-read-time" dir="ltr">44–56 minutes</div>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="content">
+        <div class="moz-reader-content reader-show-element"><div id="readability-page-1" class="page"><div lang="en" dir="ltr" id="mw-content-text">
+
+<figure><a href="https://wiibrew.org/wiki/File:Wii-Remote-Top-surface.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii-Remote-Top-surface.jpg" width="200" height="48" class="moz-reader-block-img"></a><figcaption>Wii remote circuit board, top surface</figcaption></figure><figure><a href="https://wiibrew.org/wiki/File:Wii_Remote_uncovered.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii_Remote_uncovered.jpg" width="200" height="54" class="moz-reader-block-img"></a><figcaption>Wii remote circuit board, bottom surface</figcaption></figure>
+<dl><dd><span><i>This article is a technical guide to the Wii Remote. For a high-level overview of the Wii Remote, see the <a rel="nofollow" href="http://en.wikipedia.org/wiki/Wii_Remote">Wikipedia entry</a>.</i></span></dd></dl>
+<figure><a href="https://wiibrew.org/wiki/File:Wii_Remote_Broadcom.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii_Remote_Broadcom.jpg" width="200" height="200" class="moz-reader-block-img"></a><figcaption>Broadcom BCM2042 in a Wii remote</figcaption></figure><p>The <b>Wii Remote</b> (informally known as the <b>Wiimote</b>)
+ is the Wii's main input device. It is a wireless device, using standard
+ Bluetooth technology to communicate with the Wii. It is built around a <a rel="nofollow" href="http://www.broadcom.com/products/Bluetooth/Bluetooth-RF-Silicon-and-Software-Solutions/BCM2042">Broadcom BCM2042</a>
+ bluetooth System-on-a-chip, and contains multiple peripherals that 
+provide data to it, as well as an expansion port for external add-ons. 
+The Wii Remote uses (and, at times, abuses) the standard Bluetooth HID 
+protocol to communicate with the host, which is directly based upon the <a rel="nofollow" href="http://en.wikipedia.org/wiki/USB_human_interface_device_class">USB HID</a>
+ standard. As such, it will appear as a standard input device to any 
+Bluetooth host. However, the Wii Remote does not make use of the 
+standard data types and HID descriptor, and only describes its report 
+format length, leaving the actual contents undefined, which makes it 
+useless with standard HID drivers (but some <a href="https://wiibrew.org/wiki/Wiimote_Driver" title="Wiimote Driver">Wiimote Drivers</a>
+ exist). The Wii Remote actually uses a fairly complex set of 
+operations, transmitted through HID Output reports, and returns a number
+ of different data packets through its Input reports, which contain the 
+data from its peripherals.
+</p>
+
+<h2><span id="Summary">Summary</span></h2>
+<p>Reverse engineering and documenting all of the Wii Remote's features 
+is a work in progress. Here are the known features and their status:
+</p>
+
+<h2><span id="Bluetooth_Communication">Bluetooth Communication</span></h2>
+<p>The Wiimote communicates with a host via standard Bluetooth 
+protocols. The Wiimote can be placed into discoverable mode for 20s by 
+pressing the Sync button on its back under the battery cover, or placed 
+into a special temporary/"guest" discoverable mode by pressing the 1 and
+ 2 buttons simultaneously when off. While most operating systems will 
+consider a paired Wiimote to be 'bonded' regardless of which mode the 
+Wiimote is connected with, the Wiimote will not bond to the host machine
+ if in temporary mode, and will need to be re-paired to use again later.
+</p><p>When in a discoverable mode, a number of the player LEDs based on
+ the battery level will blink. With full battery, all four LEDs will 
+blink, and the lower the battery level, the fewer LEDs will blink. 
+During device inquiry, the host will find all discoverable nearby 
+Wiimotes. Now the host can establish a Bluetooth baseband connection to 
+the Wiimote. After a baseband connection is established, regardless of 
+if bonding is desired, the host must send an authentication request to 
+the Wiimote and begin <a href="#Bluetooth_Pairing">pairing</a>.
+</p><p>Once authentication has been established, the <a href="#HID_Interface">HID data channel 0x13 can be opened</a>
+ and used for reading and writing reports from/to the Wiimote. Older 
+Wiimotes (RVL-CNT-01) allowed the data channel to be opened before 
+authentication, but the newer RVL-CNT-01-TR models will shut down 
+immediately if this connection is made <b>before</b> authentication is established, so the most compatible method is to simply wait to open the data channel until afterwards.
+</p>
+<h2><span id="Bluetooth_Pairing">Bluetooth Pairing</span></h2>
+<p>The Wiimote supports the legacy Bluetooth pairing method, which involves sending a PIN to the Wiimote. Bluetooth pairing is <i>technically</i> not required to use older (RVL-CNT-01) Wiimotes, but this is not supported by the newer RVL-CNT-01-TR models. <b>Pairing</b> does not mean the same thing as <b>bonding</b>, and you can temporarily pair to a device without them being bonded.
+</p><p>Bluetooth pairing must be initiated by the host by sending an 
+"Authentication Requested" HCI command. The Wiimote will ask the host 
+for a link key, which can be provided if the Wiimote has been previously
+ bonded, but if the host has no such link key, the request must be 
+rejected and a PIN code will then be requested. The PIN required is 
+different depending on if using the Sync button (bonding) or 1 + 2 
+(temporary/guest). The PIN code for bonding is the binary Bluetooth 
+address of the host machine, in reverse, while the code for temporary 
+pairing is the binary Bluetooth address of the Wiimote, also in reverse.
+ For example, if the Bluetooth address of your device is 
+11:22:33:44:55:66, then the bytes of the PIN will be 0x66 0x55 0x44 0x33
+ 0x22 0x11. Normally, Bluetooth PINs are expected to be ASCII strings, 
+not binary, which means that pairing Wiimotes through OS pairing prompts
+ can be challenging due to the input methods expecting strings, but 
+there are other interfaces that can be used to pair Bluetooth devices on
+ most operating systems.
+</p><p>After sending the PIN to the Wiimote via a PIN code request reply
+ HCI command, the Wiimote will return an "Authentication Complete" 
+command and the pairing is established. If the devices have bonded as 
+well, a link key notification event will be received, and this link key 
+can be stored for later authentication.
+</p><p>If the host successfully bonded with the Wiimote <b>and established a data pipe HID connection</b>, the Wiimote will bond with the host and enable <i>single press reconnection</i>. That means if the Wiimote is disconnected from the host, it will actively seek out and request to connect to the host if <b>any</b> button is pressed. After establishing the connection, the wiimote sends a <a href="#Data_Reporting">button input report</a>, which allows the host to see what button was pressed.
+</p><p>The new Bluetooth pairing method known as SSP (Secure Simple Pairing) is not supported.
+</p><p>The Wiimote has space for several host addresses (at least 3 are 
+known to work) so it can be bonded with more than one host (like a PC or
+ Wii) and will try to reconnect to these hosts in reverse order from 
+when they were bonded. If buttons 1 and 2 or the Sync button on its back
+ are pressed, the Wiimote will not actively attempt to connect to its 
+saved hosts, but instead places itself in discoverable mode and waits 
+for incoming connections, so that Bluetooth pairing does not conflict 
+with normal host connections.
+</p><p>It is not currently known how to remove host addresses from the 
+Wiimote. However, with some investigation, it should be possible to 
+locate them in the EEPROM and manipulate them. If this is considered a 
+security issue, then don't bond your devices.
+</p>
+<h2><span id="SDP_information">SDP information</span></h2>
+<p>When queried with the Bluetooth Service Discovery Protocol (<a rel="nofollow" href="https://web.archive.org/web/20131006043725/http://www.palowireless.com/infotooth/tutorial/sdp.asp">SDP</a>), the Wii Remote reports back a great deal of information. In particular, it reports:
+</p>
+<table>
+
+<tbody><tr>
+<td>
+</td>
+<td>Wii Remote/old Wii Remote Plus
+</td>
+<td>new Wii Remote Plus
+</td></tr>
+<tr>
+<td><b>Name</b>
+</td>
+<td>Nintendo RVL-CNT-01
+</td>
+<td>Nintendo RVL-CNT-01-TR
+</td></tr>
+<tr>
+<td><b>Vendor ID</b>
+</td>
+<td>0x057e
+</td>
+<td>0x057e
+</td></tr>
+<tr>
+<td><b>Product ID</b>
+</td>
+<td>0x0306
+</td>
+<td>0x0330
+</td></tr>
+<tr>
+<td><b>Major Device Class</b>
+</td>
+<td>1280
+</td>
+<td>?
+</td></tr>
+<tr>
+<td><b>Minor Device Class</b>
+</td>
+<td>4
+</td>
+<td>?
+</td></tr>
+<tr>
+<td><b>Service Class</b>
+</td>
+<td>0
+</td>
+<td>?
+</td></tr>
+<tr>
+<td><b>(Summary of all Class Values)</b>
+</td>
+<td>0x002504
+</td>
+<td>0x000508
+</td></tr></tbody></table>
+<h2><span id="HID_Interface">HID Interface</span></h2>
+<p>Establishing a HID connection with the Wii Remote can be done on PSM 
+0x11 for the control pipe and PSM 0x13 for the data pipe using the 
+Bluetooth L2CAP protocol. On Windows you don't need to deal with L2CAP 
+yourself, and can use high-level windows HID functions. However, the 
+data pipe <b>must</b> only be established <i>after</i> authentication has succeeded, or else newer RVL-CNT-01-TR model Wiimotes will immediately turn themselves off.
+</p><p>The HID standard allows devices to be self-describing, using a 
+HID descriptor block. This block includes an enumeration of reports that
+ the device understands. A report can be thought of similar to a network
+ port assigned to a particular service. Reports are unidirectional 
+however, and the HID descriptor lists for each port the direction (Input
+ or Output) and the payload size for each port. Like all Bluetooth HID 
+devices, the Wii Remote reports its HID descriptor block when queried 
+using the SDP protocol. However, no information regarding the actual 
+data units within each report is returned, only the length in bytes.
+</p><p>Note: An "Input" report is sent by the Wii Remote to the host. An
+ "Output" report is sent by the host to the Wii Remote. When using a Wii
+ Remote, all input reports are prepended with 0xa1 and all output 
+reports are prepended with 0xa2; this is the "(a2)" in many example 
+reports below. Output reports are sent over the data pipe, which is also
+ used to read input reports (thus, the control pipe is essentially 
+unused).
+</p><p>The original Wiimotes (RVL-CNT-01) allowed sending commands using
+ SET REPORT (0x52) over the control pipe, instead of using the data 
+pipe; however, this form does not work on the newer RVL-CNT-01-TR model,
+ and as such is not recommended.
+</p><p>These are the reports the Wii Remote uses, and their use:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>I</b>/<b>O</b>
+</td>
+<td><b>ID(s)</b>
+</td>
+<td><b>Size</b>
+</td>
+<td><b>Function</b>
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x10
+</td>
+<td>1
+</td>
+<td><a href="#Rumble">Rumble</a>
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x11
+</td>
+<td>1
+</td>
+<td><a href="#Player_LEDs"> Player LEDs</a>
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x12
+</td>
+<td>2
+</td>
+<td><a href="#Data_Reporting"> Data Reporting</a> mode
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x13
+</td>
+<td>1
+</td>
+<td><a href="#IR_Camera"> IR Camera</a> Enable
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x14
+</td>
+<td>1
+</td>
+<td><a href="#Speaker"> Speaker</a> Enable
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x15
+</td>
+<td>1
+</td>
+<td><a href="#Status_Information"> Status Information</a> Request
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x16
+</td>
+<td>21
+</td>
+<td>Write <a href="#Memory_and_Registers"> Memory and Registers</a>
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x17
+</td>
+<td>6
+</td>
+<td>Read <a href="#Memory_and_Registers"> Memory and Registers</a>
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x18
+</td>
+<td>21
+</td>
+<td><a href="#Speaker"> Speaker</a> Data
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x19
+</td>
+<td>1
+</td>
+<td><a href="#Speaker"> Speaker</a> Mute
+</td></tr>
+<tr>
+<td>O
+</td>
+<td>0x1a
+</td>
+<td>1
+</td>
+<td><a href="#IR_Camera"> IR Camera</a> Enable 2
+</td></tr>
+<tr>
+<td>I
+</td>
+<td>0x20
+</td>
+<td>6
+</td>
+<td><a href="#0x20:_Status"> Status Information</a>
+</td></tr>
+<tr>
+<td>I
+</td>
+<td>0x21
+</td>
+<td>21
+</td>
+<td>Read <a href="#Memory_and_Registers"> Memory and Registers</a> Data
+</td></tr>
+<tr>
+<td>I
+</td>
+<td>0x22
+</td>
+<td>4
+</td>
+<td><a href="#0x22:_Acknowledge_output_report,_return_function_result">Acknowledge output report, return function result</a>
+</td></tr>
+<tr>
+<td>I
+</td>
+<td>0x30-0x3f
+</td>
+<td>2-21
+</td>
+<td><a href="#Data_Reporting"> Data reports</a>
+</td></tr></tbody></table>
+<p>For clarity, the convention in this document is to show packets 
+including the Bluetooth-HID command (in parentheses), report ID, and 
+payload, as described in sections 7.3 and 7.4 of the <a rel="nofollow" href="http://www.bluetooth.com/SiteCollectionDocuments/HID_SPEC_V10.pdf">Bluetooth HID specification</a>. Each byte is written out in hexadecimal, without the 0x prefix, separated by spaces. For example,
+</p>
+<pre>(a1) 30 00 00
+</pre>
+<p>is a DATA input packet (0xa1), on channel 0x30, with the two byte 
+payload 0x00, 0x00. When using higher level HID functions rather than 
+Bluetooth functions, the bytes in parentheses will never be present.
+</p><p>Force Feedback is accessible through the first byte of ALL output
+ reports in the same way. This is not included above to avoid clutter.
+</p>
+<h3><span id="Output_Report_common_information">Output Report common information</span></h3>
+<p>The first byte in many Output reports has a similar meaning. In every
+ single Output Report, bit 0 (0x01) of the first byte controls the 
+Rumble feature. Additionally, bit 2 (0x04) is used in several Output 
+Reports as the ON/OFF flag for the specific feature controlled by it. 
+For example, sending 0x04 to Report 0x19 (Speaker Mute) will mute the 
+speaker:
+</p>
+<pre>(a2) 19 04
+</pre>
+<p>Sending 0x00 will unmute it:
+</p>
+<pre>(a2) 19 00
+</pre>
+<p>These Output Reports share the above behavior: Data Reporting Mode 
+(0x12), IR Camera Enable (0x13), Speaker Enable (0x14), Speaker Mute 
+(0x19), IR Enable 2 (0x1a).
+</p>
+<h3><span id="Input_Report_common_information">Input Report common information</span></h3>
+<p>The first two bytes of ALL input reports, except 0x3d, contain the 
+Core Buttons (BB BB). This includes all the 0x2~ status reports, not 
+just the 0x3~ data reports. 0x3d is an exception, since it only returns 
+expansion information.
+</p>
+<h2><span id="Status_Reporting">Status Reporting</span></h2>
+<h2><span id="0x20:_Status">0x20: Status</span></h2>
+<p>To request the status report, send anything to Output Report 0x15. The Status Report will also be automatically sent when an <a href="#Extension_Controllers"> Extension Controller</a> is connected or disconnected.
+</p><p>This will request the status report (and turn off <a href="#Rumble"> rumble</a>):
+</p>
+<pre>(a2) 15 00
+</pre>
+<p>This report is sent either on request (in response to report 0x15), 
+or in response to an expansion being plugged in or unplugged (or synced 
+if wireless). If this report is received when not requested, the 
+application 'MUST' send report 0x12 to change the data reporting mode, 
+otherwise no further data reports will be received.
+</p>
+<pre>(a1) 20 BB BB LF 00 00 VV
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. VV is the 
+current battery level, L is the LED state, and F is a bitmask of flags 
+indicating, whether the battery is flat, whether an expansion is 
+currently connected, etc.
+</p><p>The Wii Remote can report its status, which includes the state of a few basic settings, the status of the <a href="#Extension_Controllers"> Extension Controller</a> (connected or disconnected), and the battery level.
+</p><p>VV is the current battery level, and LF is a bitmask of flags:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Bit</b>
+</td>
+<td><b>Mask</b>
+</td>
+<td><b>Meaning</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td>0x01
+</td>
+<td>Battery is nearly empty
+</td></tr>
+<tr>
+<td>1
+</td>
+<td>0x02
+</td>
+<td>An <a href="#Extension_Controllers"> Extension Controller</a> is connected
+</td></tr>
+<tr>
+<td>2
+</td>
+<td>0x04
+</td>
+<td><a href="#Speaker"> Speaker</a> enabled
+</td></tr>
+<tr>
+<td>3
+</td>
+<td>0x08
+</td>
+<td>IR camera enabled
+</td></tr>
+<tr>
+<td>4
+</td>
+<td>0x10
+</td>
+<td><a href="#Player_LEDs"> LED</a> 1
+</td></tr>
+<tr>
+<td>5
+</td>
+<td>0x20
+</td>
+<td><a href="#Player_LEDs"> LED</a> 2
+</td></tr>
+<tr>
+<td>6
+</td>
+<td>0x40
+</td>
+<td><a href="#Player_LEDs"> LED</a> 3
+</td></tr>
+<tr>
+<td>7
+</td>
+<td>0x80
+</td>
+<td><a href="#Player_LEDs"> LED</a> 4
+</td></tr></tbody></table>
+<h2><span id="0x21:_Read_Memory_Data">0x21: Read Memory Data</span></h2>
+<p>This report is sent when a read memory request is made. It returns 1 to 16 bytes of data at a time.
+</p>
+<pre>(a1) 21 BB BB SE AA AA DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. 
+</p><p>S (high nybble of SE) is the size in bytes, minus one, for the 
+current data packet. This is 0xf (16 bytes) for all but the last packet,
+ where it might be less if the requested number of bytes is not a 
+multiple of 16.
+</p><p>E (low nybble of SE) is the error flag. Known error values are 0 
+for no error, 7 when attempting to read from a write-only register or an
+ expansion that is not connected, and 8 when attempting to read from 
+nonexistant memory addresses. 
+</p><p>AA AA are the 2 least significant bytes of the absolute memory 
+address of the first byte of data returned (the high byte of the offset 
+is not returned, and neither is whether it is a register or memory that 
+is being used. Thus, this must be known from the read request). 
+</p><p>The DD bytes are the data, padded with zeroes to 16 bytes. If 
+more than 16 bytes are requested, multiple packets will be received, 
+with AA AA addresses increasing by 16 each time.
+</p>
+<h2><span id="0x22:_Acknowledge_output_report.2C_return_function_result"></span><span id="0x22:_Acknowledge_output_report,_return_function_result">0x22: Acknowledge output report, return function result</span></h2>
+<p>This input report is sent to the host to report an error related to 
+an output report, or the function result from that output report. It is 
+sent when bit 1 of the first byte of any output report is set.
+</p>
+<pre>(a1) 22 BB BB RR EE
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. 
+</p><p>RR is the output report number that the Wii remote is acknowledging it received.
+</p><p>EE is the error code or function result. 
+00 = success. 
+03 = error.
+04 = unknown (possibly returned by report 16H, 17H or 18H)
+05 = unknown (possibly returned by report 12H). 
+08 = unknown (possibly returned bt report 16H).
+</p>
+<h2><span id="Data_Reporting">Data Reporting</span></h2>
+<p>The Wii Remote has a number of different data reporting modes. Each 
+of these modes combines certain Core data features with data from 
+external peripherals, and sends it to the host through one of the report
+ IDs, determined by the mode. The data format from the peripherals is 
+determined by the peripherals themselves, all the Wii Remote controller 
+does is pull bytes from them and send them out to the host. Due to this,
+ certain feature combinations are not available, as there are not enough
+ bytes for them in any of the output modes.
+</p><p>The Data Reporting Mode is set by sending a two-byte command to Report 0x12:
+</p>
+<pre>(a2) 12 TT MM
+</pre>
+<p>Bit 2 of TT specifies whether continuous reporting is desired. If bit
+ 2 (0x04) is set, the Wii Remote will send reports whether there has 
+been any change to the data or not. Otherwise, the Wii Remote will only 
+send an output report when the data has changed.
+</p><p>MM specifies the Reporting Mode. Each Mode is specified by the 
+Output Report ID that the data will be sent to. For example, this will 
+set mode to 0x33:
+</p>
+<pre>(a2) 12 00 33
+</pre>
+<p>Data will then arrive through Input Report 0x33.
+</p><p>Upon powerup, the Data Reporting Mode defaults to 0x30. Following
+ a connection or disconnection event on the Extension Port, data 
+reporting is disabled and the Data Reporting Mode must be reset before 
+new data can arrive.
+</p><p>Modes which include Accelerometer data also embed part of it in 
+the unused Buttons bits. In all modes except for 0x3e/0x3f, the Buttons 
+data includes the LSBs of the Accelerometer data. In mode 0x3e/0x3f, the
+ interleaved Buttons data includes the Z-axis Accelerometer data.
+</p>
+<h2><span id="0x30:_Core_Buttons">0x30: Core Buttons</span></h2>
+<p>This mode returns data from the buttons in the Wii Remote:
+</p>
+<pre>(a1) 30 BB BB
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data.
+</p>
+<h2><span id="0x31:_Core_Buttons_and_Accelerometer">0x31: Core Buttons and Accelerometer</span></h2>
+<p>This mode returns data from the buttons and the accelerometer in the Wii Remote:
+</p>
+<pre>(a1) 31 BB BB AA AA AA
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. AA AA AA is the <a href="#Accelerometer"> Accelerometer</a> data.
+</p>
+<h2><span id="0x32:_Core_Buttons_with_8_Extension_bytes">0x32: Core Buttons with 8 Extension bytes</span></h2>
+<p>This mode returns data from the buttons in the Wii Remote, and data from an extension controller connected to it:
+</p>
+<pre>(a1) 32 BB BB EE EE EE EE EE EE EE EE
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. The 8 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x33:_Core_Buttons_and_Accelerometer_with_12_IR_bytes">0x33: Core Buttons and Accelerometer with 12 IR bytes</span></h2>
+<p>This mode returns data from the buttons, accelerometer, and IR Camera in the Wii Remote:
+</p>
+<pre>(a1) 33 BB BB AA AA AA II II II II II II II II II II II II 
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. AA AA AA is the <a href="#Accelerometer"> Accelerometer</a> data. The 12 II bytes are from the built-in <a href="#IR_Camera"> IR Camera</a>.
+</p>
+<h2><span id="0x34:_Core_Buttons_with_19_Extension_bytes">0x34: Core Buttons with 19 Extension bytes</span></h2>
+<p>This mode returns data from the buttons in the Wii Remote, and data from an extension controller connected to it:
+</p>
+<pre>(a1) 34 BB BB EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE 
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. The 19 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x35:_Core_Buttons_and_Accelerometer_with_16_Extension_Bytes">0x35: Core Buttons and Accelerometer with 16 Extension Bytes</span></h2>
+<p>This mode returns data from the buttons and accelerometer in the Wii 
+Remote, and data from an extension controller connected to it:
+</p>
+<pre>(a1) 35 BB BB AA AA AA EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. AA AA AA is the <a href="#Accelerometer"> Accelerometer</a> data. The 16 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x36:_Core_Buttons_with_10_IR_bytes_and_9_Extension_Bytes">0x36: Core Buttons with 10 IR bytes and 9 Extension Bytes</span></h2>
+<p>This mode returns data from the buttons and IR camera in the Wii Remote, and data from an extension controller connected to it:
+</p>
+<pre>(a1) 36 BB BB II II II II II II II II II II EE EE EE EE EE EE EE EE EE
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. The 10 II bytes are from the built-in <a href="#IR_Camera"> IR Camera</a>, and the 9 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x37:_Core_Buttons_and_Accelerometer_with_10_IR_bytes_and_6_Extension_Bytes">0x37: Core Buttons and Accelerometer with 10 IR bytes and 6 Extension Bytes</span></h2>
+<p>This mode returns data from the buttons, accelerometer, and IR camera
+ in the Wii Remote, and data from an extension controller connected to 
+it:
+</p>
+<pre>(a1) 37 BB BB AA AA AA II II II II II II II II II II EE EE EE EE EE EE
+</pre>
+<p>BBBB is the core <a href="#Buttons"> Buttons</a> data. AA AA AA is the <a href="#Accelerometer"> Accelerometer</a> data. The 10 II bytes are from the built-in <a href="#IR_Camera"> IR Camera</a>, and the 6 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x3d:_21_Extension_Bytes">0x3d: 21 Extension Bytes</span></h2>
+<p>This mode returns data from an extension controller connected to the 
+Wii Remote. It is the only input report that does not include core 
+buttons.
+</p>
+<pre>(a1) 3d EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE EE
+</pre>
+<p>The 21 EE bytes are from the <a href="#Extension_Controllers"> Extension Controller</a> currently connected to the Wii Remote.
+</p>
+<h2><span id="0x3e_.2F_0x3f:_Interleaved_Core_Buttons_and_Accelerometer_with_36_IR_bytes"></span><span id="0x3e_/_0x3f:_Interleaved_Core_Buttons_and_Accelerometer_with_36_IR_bytes">0x3e / 0x3f: Interleaved Core Buttons and Accelerometer with 36 IR bytes</span></h2>
+<p>Both 0x3e and 0x3f are equivalent, and return data alternately 
+through report IDs 0x3e and 0x3f. The data is interleaved, and is 
+returned at half the speed of other modes (as two reports are needed for
+ a single data unit). This mode returns data from the buttons, 
+accelerometer, and IR camera in the Wii Remote:
+</p>
+<pre>(a1) 3e BB BB AA II II II II II II II II II II II II II II II II II II
+(a1) 3f BB BB AA II II II II II II II II II II II II II II II II II II
+</pre>
+<p>BBBB is the core button data, as specified in the <a href="#Buttons"> Buttons</a> section. AA AA is the <a href="#Accelerometer"> Accelerometer</a> data, in a format specific to this mode described in the <a href="#Interleaved_Accelerometer_Reporting"> Interleaved Accelerometer Reporting</a> section. The 36 II bytes are from the built-in <a href="#IR_Camera"> IR Camera</a>.
+</p>
+<h2><span id="Memory_and_Registers">Memory and Registers</span></h2>
+<p>The Wii Remote includes a built-in <a href="#EEPROM_Memory"> EEPROM memory</a>,
+ part of which is accessible to the user to store that. This user part 
+is used to store calibration constants, as well as the Mii Data. 
+Additionally, many peripherals on the Wii Remote have <a href="#Control_Registers"> registers</a> which are accessible through a portion of the address space.
+</p><p>Both built-in memory and peripheral registers are accessed using 
+the same reports, where a flag is used to select between the two.
+</p>
+<h2><span id="Reading_and_Writing">Reading and Writing</span></h2>
+<p>To read data, commands are sent to Output Report 0x17:
+</p>
+<pre>(a2) 17 MM FF FF FF SS SS
+</pre>
+<p>FF FF FF is the offset, and SS SS is the size to read in bytes (both 
+in big-endian format). Bit 2 (0x04) of MM selects the address space. 
+Clearing this bit results in reading from <a href="#EEPROM_Memory"> EEPROM Memory</a>, while setting it results in reading from the <a href="#Control_Registers"> control registers</a>.
+ Setting bit 3 (0x08) also works to access registers, but setting both 
+results in errors. As with all other reports, it also includes the 
+Rumble flag, which must be set to the current rumble state to avoid 
+affecting it.
+</p><p>Data read is returned through Input Report 0x21:
+</p>
+<pre>(a1) 21 BB BB SE FF FF DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
+</pre>
+<p>BB BB is the state of the buttons on the Wii Remote. During data 
+reads, regular input reporting is temporarily suspended. Button data is 
+available through the data input reports, but no other input data can be
+ collected while the transfer lasts. FF FF is the offset expressed in 
+absolute memory address of the Wii remote memory for the first byte of 
+data returned (the high byte of the offset is not returned, and neither 
+is which data memory is being used. Thus, this must be known from the 
+read request). E (low nybble of SE) is the error flag. Known error 
+values are 0 for no error, 7 when attempting to read from a write-only 
+register, and 8 when attempting to read from nonexistant memory. S (high
+ nybble of SE) is the size in bytes, minus one, for the current data 
+packet. This is 0xf (16 bytes) for all but the last packet, where it 
+might be less if the requested number of bytes is not a multiple of 16. 
+The DD bytes are the data, padded with zeroes to 16 bytes. If more than 
+16 bytes are requested, multiple packets will be received, with FF FF 
+offsets increasing by 16 each time.
+</p><p>To write data, commands are sent to Output Report 0x16:
+</p>
+<pre>(a2) 16 MM FF FF FF SS DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
+</pre>
+<p>The meaning of the bytes is the same as during reads, except that 
+size can be a maximum of 16 bytes (as there is only space for that much 
+data), and the actual data to write follows (the DD bytes), padded out 
+to 16 bytes.
+</p><p>Some kind of acknowledgement is received on Input Report 0x22. This has not been investigated yet.
+</p>
+<h2><span id="EEPROM_Memory">EEPROM Memory</span></h2>
+<figure><a href="https://wiibrew.org/wiki/File:Wii_Remote_Flash.jpg"><img src="Wiimote%20-%20WiiBrew_files/300px-Wii_Remote_Flash.jpg" width="300" height="300" class="moz-reader-block-img"></a><figcaption></figcaption></figure><p>There is a 128kbit (= 16kB) EEPROM chip (<a rel="nofollow" href="http://www.st.com/stonline/products/literature/ds/4578/m24128-bw.pdf">Data Sheet</a> / <a rel="nofollow" href="http://www.sparkfun.com/tutorial/WiiRemote/NintendoWii-I2C-Data.zip">Full EEPROM dump from a sample Wii Remote</a>)
+ in the Wii Remote. Part of its contents include code for the built-in 
+microcontroller, and a generic section which can be freely read and 
+written by the host. This section is 0x1700 bytes long, and part of this
+ memory is used to store the  <a href="https://wiibrew.org/wiki/Wiimote/Mii_Data" title="Wiimote/Mii Data">Mii Data</a>.
+ It can be accessed by reading from/writing to addresses 0x0000-0x16FF 
+in the Wii Remote's virtual memory space; in the actual EEPROM chip, the
+ data is located at 0x0070-0x176F. 
+</p><p>The <a href="https://wiibrew.org/wiki/Wiimote/Firmware" title="Wiimote/Firmware">firmware stored in the Wiimote has been disassembled</a>.
+</p><p>The <a rel="nofollow" href="http://www.broadcom.com/products/Bluetooth/Bluetooth-RF-Silicon-and-Software-Solutions/BCM2042">BCM2042</a>
+ microcontroller built into the Wii Remote includes a large 108kb 
+on-chip ROM section for storing firmware. If the EEPROM chip really 
+contains code for the BCM2042 then this was probably done to make 
+firmware updates possible, so there might be a way of accessing the 
+other parts of the EEPROM via Bluetooth as well.
+From the <a rel="nofollow" href="http://www.broadcom.com/collateral/pb/2042-PB03-R.pdf">BCM2042 Product Brief</a>: "ROM-based design eliminates external flash memories; Flash option offered to support feature development".
+</p><p>On a virgin Wii Remote, acquired separately (not bundled with a 
+Wii), that has never communicated with any device (except the PC used to
+ dump the memory contents), most of the memory is blank (0x00). However,
+ the first few bytes contain some information:
+</p>
+<pre>0000:  A1 AA 8B 99 AE 9E 78 30 A7 74 D3 A1 AA 8B 99 AE
+0010:  9E 78 30 A7 74 D3 82 82 82 15 9C 9C 9E 38 40 3E
+0020:  82 82 82 15 9C 9C 9E 38 40 3E 00 00 00 00 00 00
+0030:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+</pre>
+<p>This can be better visualized as two sequences, each one repeated twice:
+</p>
+<pre>0000:  A1 AA 8B 99 AE 9E 78 30 A7 74 D3
+000B:  A1 AA 8B 99 AE 9E 78 30 A7 74 D3
+0016:  82 82 82 15 9C 9C 9E 38 40 3E
+0020:  82 82 82 15 9C 9C 9E 38 40 3E
+</pre>
+<p>These are two blocks of calibration data (for redundancy), where the 
+last byte of each is a checksum (all prior bytes plus 0x55). Nintendo's 
+libraries will only use a calibration block if its checksum is correct, 
+falling back to the second one if the first one is incorrect, and 
+falling back to default values otherwise.
+</p><p>The first block contains calibration data related to the IR 
+camera: the position of 4 reference values.  Nintendo's code uses this 
+to compute a center offset, scale, and possibly an angle offset.  It 
+also looks like the values could appear in any order; code exists to 
+check for values in each quadrant (below and above x=512 and y=384).
+</p>
+<table>
+
+<tbody><tr>
+<td colspan="2">&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td colspan="2"><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0x00
+</td>
+<td>0x0B
+</td>
+<td colspan="8"><b>X 1</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x01
+</td>
+<td>0x0C
+</td>
+<td colspan="8"><b>Y 1</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x02
+</td>
+<td>0x0D
+</td>
+<td colspan="2"><b>Y 1</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X 1</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>Y 2</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X 2</b><span>&lt;<span>9:8</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x03
+</td>
+<td>0x0E
+</td>
+<td colspan="8"><b>X 2</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x04
+</td>
+<td>0x0F
+</td>
+<td colspan="8"><b>Y 2</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x05
+</td>
+<td>0x10
+</td>
+<td colspan="8"><b>X 3</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x06
+</td>
+<td>0x11
+</td>
+<td colspan="8"><b>Y 3</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x07
+</td>
+<td>0x12
+</td>
+<td colspan="2"><b>Y 3</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X 3</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>Y 4</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X 4</b><span>&lt;<span>9:8</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x08
+</td>
+<td>0x13
+</td>
+<td colspan="8"><b>X 4</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x09
+</td>
+<td>0x14
+</td>
+<td colspan="8"><b>Y 4</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x0A
+</td>
+<td>0x15
+</td>
+<td colspan="8"><b>Checksum</b>
+</td></tr></tbody></table>
+<p>The data given above decodes to (0A1, 2AA), (399, 28B), (39E, 078), (0A7, 030).
+</p>
+<table>
+
+<tbody><tr>
+<th><span>Additional examples</span>
+</th></tr>
+</tbody></table>
+<p>The four bytes starting at 0x0016 and 0x0020 store the calibrated 
+zero offsets for the accelerometer (high 8 bits of X,Y,Z in the first 
+three bytes, low 2 bits packed in the fourth byte as --XXYYZZ). The four
+ bytes at 0x001A and 0x24 store the force of gravity on those axes. The 
+byte at 0x1e and 0x28 seems to be unused, but apparently used to contain
+ flags related to the speaker volume and the rumble motor (Nintendo 
+games will print a debug message related to it but do not seem to use 
+the value elsewhere).  On all checked remotes, that byte has been 0x40.
+</p>
+<table>
+
+<tbody><tr>
+<td colspan="2">&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td colspan="2"><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0x16
+</td>
+<td>0x20
+</td>
+<td colspan="8"><b>0G X Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x17
+</td>
+<td>0x21
+</td>
+<td colspan="8"><b>0G Y Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x18
+</td>
+<td>0x22
+</td>
+<td colspan="8"><b>0G Z Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x19
+</td>
+<td>0x23
+</td>
+<td colspan="2">0
+</td>
+<td colspan="2"><b>0G X Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="2"><b>0G Y Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="2"><b>0G Z Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x1A
+</td>
+<td>0x24
+</td>
+<td colspan="8"><b>1G X Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x1B
+</td>
+<td>0x25
+</td>
+<td colspan="8"><b>1G Y Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x1C
+</td>
+<td>0x26
+</td>
+<td colspan="8"><b>1G Z Acceleration</b><span>&lt;<span>9:2</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x1D
+</td>
+<td>0x27
+</td>
+<td colspan="2">0
+</td>
+<td colspan="2"><b>1G X Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="2"><b>1G Y Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="2"><b>1G Z Acc</b><span>&lt;<span>1:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>0x1E
+</td>
+<td>0x28
+</td>
+<td><b>Motor</b>
+</td>
+<td colspan="7"><b>Volume</b>
+</td></tr>
+<tr>
+<td>0x1F
+</td>
+<td>0x29
+</td>
+<td colspan="8"><b>Checksum</b>
+</td></tr></tbody></table>
+<p>At 0x16D0, there is some more unknown data:
+</p>
+<pre>16D0:  00 00 00 FF 11 EE 00 00 33 CC 44 BB 00 00 66 99
+16E0:  77 88 00 00 2B 01 E8 13 00 00 00 00 00 00 00 00
+16F0:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+</pre>
+<p>In contrast to the data at 0x0000, this data seems to differ in only a few bytes between different Wii Remotes.
+</p><p>The "User Data" section appears to start with a 0x38-byte header,
+ repeated twice (so 0x70 bytes total).  The header starts with an 8-byte
+ timestamp (from TBL and TBU; 1/60750000ths of a second since January 1 
+2000).  That is followed by a 34-byte (17 characters, or 16 excluding 
+the null terminator) Unicode name (which does not necessarily match the 
+game's name), followed by the 4-byte game ID, then the application type 
+(the value at 0x80003184).  Then there is a checksum (at 0x2f), which is
+ the sum of bytes 0 through 0x2e plus 0x55.  Bytes 0x30 through 0x37 do 
+not seem to be used and were all 0.
+</p><p>Known memory ranges are listed below.
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Start</b>
+</td>
+<td><b>End</b>
+</td>
+<td><b>Length</b>
+</td>
+<td><b>Initial Value</b>
+</td>
+<td><b>Use</b>
+</td></tr>
+<tr>
+<td>0x0000
+</td>
+<td>0x0029
+</td>
+<td>0x002A
+</td>
+<td>See above
+</td>
+<td>Calibration values / pre-set data
+</td></tr>
+<tr>
+<td>0x002A
+</td>
+<td>0x0FC9
+</td>
+<td>0x0FA0
+</td>
+<td>Zeroed
+</td>
+<td>User data / Unknown uses
+</td></tr>
+<tr>
+<td>0x0FCA
+</td>
+<td>0x12B9
+</td>
+<td>0x02f0
+</td>
+<td>Zeroed
+</td>
+<td><a href="https://wiibrew.org/wiki/Wiimote/Mii_Data" title="Wiimote/Mii Data">Mii Data</a> block 1
+</td></tr>
+<tr>
+<td>0x12BA
+</td>
+<td>0x15A9
+</td>
+<td>0x02f0
+</td>
+<td>Zeroed
+</td>
+<td><a href="https://wiibrew.org/wiki/Wiimote/Mii_Data" title="Wiimote/Mii Data">Mii Data</a> block 2
+</td></tr>
+<tr>
+<td>0x15AA
+</td>
+<td>0x16CF
+</td>
+<td>0x0126
+</td>
+<td>Zeroed
+</td>
+<td>Unknown / Unused
+</td></tr>
+<tr>
+<td>0x16D0
+</td>
+<td>0x16FF
+</td>
+<td>0x0030
+</td>
+<td>See above
+</td>
+<td>Unknown data
+</td></tr></tbody></table>
+<p>The top byte of the address is unused, which means memory is mirrored
+ every 0x10000 bytes. Reading from unused addresses where the low 16 
+bits are &gt;= 0x1700 will result in error returns.
+</p>
+<h2><span id="Control_Registers">Control Registers</span></h2>
+<p>The Wii Remote has several memory mapped register spaces corresponding to different peripherals in it. These include the <a href="#Speaker"> Speaker</a>, <a href="#Extension_Controllers"> Extension Controllers</a>, and the <a href="#IR_Camera"> IR Camera</a>.
+</p>
+<p><b>Reminder</b><br>Remember to set bit 2 (0x04) on the first byte of the Output Report, otherwise you'll overwrite EEPROM memory!</p>
+<p>The peripheral to access is selected by the first byte of the 
+address, and the lower 16 bits specify the register to access within 
+that peripheral. The lowest bit of the high byte is ignored, which means
+ every peripheral is mirrored at its address + 0x10000. Known 
+peripherals are listed below:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Start</b>
+</td>
+<td><b>End</b>
+</td>
+<td><b>Use</b>
+</td></tr>
+<tr>
+<td>0xA20000
+</td>
+<td>0xA20009
+</td>
+<td><a href="#Speaker"> Speaker</a> settings
+</td></tr>
+<tr>
+<td>0xA40000
+</td>
+<td>0xA400FF
+</td>
+<td><a href="https://wiibrew.org/wiki/Wiimote/Extension_Controllers" title="Wiimote/Extension Controllers">Extension Controller</a> settings and data
+</td></tr>
+<tr>
+<td>0xA60000
+</td>
+<td>0xA600FF
+</td>
+<td><a href="https://wiibrew.org/wiki/Wiimote/Extension_Controllers/Wii_Motion_Plus" title="Wiimote/Extension Controllers/Wii Motion Plus">Wii Motion Plus</a> settings and data
+</td></tr>
+<tr>
+<td>0xB00000
+</td>
+<td>0xB00033
+</td>
+<td><a href="#IR_Camera"> IR Camera</a> settings
+</td></tr></tbody></table>
+<p>Most of these are also mirrored across the high bits of the 
+individual peripheral. For example, the second byte of the address is 
+ignored in the Extension controller address, which means any address of 
+the form 0xA4xx00 will work (as will 0xA5xx00).
+</p>
+<h2><span id="Input_Features">Input Features</span></h2>
+<p>The Wii Remote has two input features that are controlled directly by the Broadcom chip: a <a href="#Accelerometer"> Three-Axis Accelerometer</a> and 11 <a href="#Buttons"> Buttons</a>. Additionally, it has an <a href="#IR_Camera"> IR Camera</a>
+ with an object tracking processor, and an expansion port that allows 
+for external input features such as those contained in the Nunchuk and 
+the Classic Controller (see <a href="#Extension_Controllers"> Extension Controllers</a>).
+</p>
+<h2><span id="Buttons">Buttons</span></h2>
+<p>The Wii Remote has 11 buttons on its front face, and one 
+trigger-style button on the back. Of these, the Power button is special 
+and is treated differently by the Wii Remote. All the other buttons are 
+independantly accessible through a two-byte bitmask which is transmitted
+ first in most Input Reports. A button will report a 1-bit if pressed, 
+or a 0-bit otherwise. By default, these are sent only when the state of 
+any button changes, in <a href="#0x30:_Core_Buttons"> Data Reporting Mode 0x30</a>. However, the Wii Remote may be configured to report the state of the buttons continuously; see <a href="#Data_Reporting"> Data Reporting</a>.
+</p>
+<h3><span id="Core_Buttons">Core Buttons</span></h3>
+<p>The Wii Remote has 11 buttons that are used as regular input devices:
+ A, B (trigger), a 4-directional D-Pad, +, -, Home, 1, and 2. These are 
+reported as bits in a two-byte bitmask. These are the assignments, in 
+big-endian order:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Bit</b>
+</td>
+<td><b>Mask</b>
+</td>
+<td><b>First Byte</b>
+</td>
+<td><b>Second Byte</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td>0x01
+</td>
+<td>D-Pad Left
+</td>
+<td>Two
+</td></tr>
+<tr>
+<td>1
+</td>
+<td>0x02
+</td>
+<td>D-Pad Right
+</td>
+<td>One
+</td></tr>
+<tr>
+<td>2
+</td>
+<td>0x04
+</td>
+<td>D-Pad Down
+</td>
+<td>B
+</td></tr>
+<tr>
+<td>3
+</td>
+<td>0x08
+</td>
+<td>D-Pad Up
+</td>
+<td>A
+</td></tr>
+<tr>
+<td>4
+</td>
+<td>0x10
+</td>
+<td>Plus
+</td>
+<td>Minus
+</td></tr>
+<tr>
+<td>5
+</td>
+<td>0x20
+</td>
+<td>Other uses
+</td>
+<td>Other uses
+</td></tr>
+<tr>
+<td>6
+</td>
+<td>0x40
+</td>
+<td>Other uses
+</td>
+<td>Other uses
+</td></tr>
+<tr>
+<td>7
+</td>
+<td>0x80
+</td>
+<td>Unknown
+</td>
+<td>Home
+</td></tr></tbody></table>
+<h3><span id="Power_Button">Power Button</span></h3>
+<p>When the Wii Remote is turned off, pressing the Power button will 
+attempt to wake up the Wii that is synchronized to it. The Wii's 
+Bluetooth module is connected to the GPIO pins, just like the front 
+panel power button, and will send poweron/poweroff events through STM 
+for exactly one second, regardless of how long the button is held down 
+for. When the Wii Remote is turned on and connected to a host, pressing 
+and holding the Power button for a few seconds will turn the Wii Remote 
+off and request disconnection from the host. The disconnection reason 
+included with the Baseband (ACL) disconnection request will be REMOTE 
+DEVICE TERMINATED CONNECTION DUE TO POWER OFF (0x15). Another possible 
+value is REMOTE DEVICE TERMINATED CONNECTION DUE TO LOW RESOURCES 
+(0x14), which indicates that the Wii Remote performed a controlled 
+shutdown due to a low battery condition.
+</p>
+<h3><span id="Sync_Button">Sync Button</span></h3>
+<p>The Sync button is hidden under the battery cover. When the Sync 
+button is pressed, the Wii Remote will disconnect from whatever it is 
+currently connected to, make itself discoverable, and accept pairing 
+requests for exactly 20 seconds (regardless of how long the button is 
+held down for). The disconnection reason included with the baseband 
+(ACL) disconnection request will be REMOTE USER TERMINATED CONNECTION 
+(0x13). For more information on syncing, please see the <a href="#Bluetooth_Pairing">#Bluetooth Pairing</a> section.
+</p>
+<h3><span id="Button_Hardware">Button Hardware</span></h3>
+<p>The physical hardware of the buttons varies: there are membrane 
+switches and microswitch click buttons. There has been some success 
+soldering wires to the membrane switch contacts and actuating the switch
+ through an external switch. The following table describes the physical 
+hardware for each input.
+</p>
+<table>
+
+<tbody><tr>
+<th>Function
+</th>
+<th>Switch type
+</th>
+<th>Circuit board surface
+</th></tr>
+<tr>
+<td>A
+</td>
+<td><a rel="nofollow" href="http://en.wikipedia.org/wiki/Membrane_switch">membrane</a>
+</td>
+<td>top, SW9
+</td></tr>
+<tr>
+<td>B
+</td>
+<td>membrane
+</td>
+<td>bottom, SW8
+</td></tr>
+<tr>
+<td>-
+</td>
+<td><a rel="nofollow" href="http://en.wikipedia.org/wiki/Microswitch">microswitch</a>
+</td>
+<td>top, SW10
+</td></tr>
+<tr>
+<td>Home
+</td>
+<td>microswitch
+</td>
+<td>top, SW11
+</td></tr>
+<tr>
+<td>+
+</td>
+<td>microswitch
+</td>
+<td>top, SW5
+</td></tr>
+<tr>
+<td>1
+</td>
+<td>membrane
+</td>
+<td>top, SW7
+</td></tr>
+<tr>
+<td>2
+</td>
+<td>membrane
+</td>
+<td>top, SW6
+</td></tr>
+<tr>
+<td>Up
+</td>
+<td>membrane
+</td>
+<td>top, SW4
+</td></tr>
+<tr>
+<td>Down
+</td>
+<td>membrane
+</td>
+<td>top, SW3
+</td></tr>
+<tr>
+<td>Left
+</td>
+<td>membrane
+</td>
+<td>top, SW1
+</td></tr>
+<tr>
+<td>Right
+</td>
+<td>membrane
+</td>
+<td>top, SW2
+</td></tr>
+<tr>
+<td>Sync
+</td>
+<td>
+</td>
+<td>bottom, SW12
+</td></tr>
+<tr>
+<td>Power
+</td>
+<td>
+</td>
+<td>top, SW13
+</td></tr></tbody></table>
+<h2><span id="Accelerometer">Accelerometer</span></h2>
+<figure><a href="https://wiibrew.org/wiki/File:Wii-Remote-Accel.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii-Remote-Accel.jpg" width="200" height="200" class="moz-reader-block-img"></a><figcaption>ADXL330 in a Wii remote</figcaption></figure><figure><a href="https://wiibrew.org/wiki/File:Wiimote_axis2.png"><img src="Wiimote%20-%20WiiBrew_files/200px-Wiimote_axis2.png" width="200" height="168" class="moz-reader-block-img"></a><figcaption>Coordinate system used by Wii Remote</figcaption></figure>
+<p>The Wii Remote includes a three-axis linear accelerometer located on 
+the top suface of the circuit board, slightly left of the large A 
+button.  The integrated circuit is the <a rel="nofollow" href="http://www.seekic.com/icdata/%20ADXL330.html">ADXL330</a> (<a rel="nofollow" href="http://www.analog.com/UploadedFiles/Data_Sheets/ADXL330.pdf">data sheet</a>),
+ manufactured by Analog Devices.  This device is physically rated to 
+measure accelerations over a range of at least +/- 3g with 10% 
+sensitivity.
+</p><p>Since the accelerometer actually measures the force exerted by a 
+set of small proof masses inside of it with respect to its enclosure, 
+the accelerometer measures linear acceleration in a free fall frame of 
+reference. If the Wii Remote is in free fall, it will report zero 
+acceleration. At rest, it will report an upward acceleration (+Z, when 
+horizontal) equal to the acceleration due to gravity, g (approximately 
+9.8 m/s²) but in the opposite direction. This fact can be used to derive
+ tilt from the acceleration outputs when the Wii Remote is reasonably 
+still.
+</p>
+<h3><span id="Normal_Accelerometer_Reporting">Normal Accelerometer Reporting</span></h3>
+<p>In all <a href="#Data_Reporting"> Data Reporting Modes</a> which include Accelerometer data except for <a href="#0x3e_/_0x3f:_Interleaved_Core_Buttons_and_Accelerometer_with_36_IR_bytes"> mode 0x3e/0x3f</a>, the accelerometer data is reported as three consecutive bytes:
+</p>
+<pre>(a1) RR BB BB XX YY ZZ [...]
+</pre>
+<p>XX, YY, and ZZ are unsigned bytes representing the acceleration in 
+each of the three axis, where zero acceleration is approximately 0x80. 
+The coordinate system is shown in the diagram above (note that this is 
+different from the coordinate system used by GlovePIE). Additionally, 
+the BB BB <a href="#Buttons"> Buttons</a> bytes also include the LSBs of the acceleration values in the unused bits, according to the following table:
+</p>
+<table>
+
+<tbody><tr>
+<td colspan="2">&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td>&nbsp;
+</td>
+<td colspan="2"><b>X</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr>
+<tr>
+<td>1
+</td>
+<td>&nbsp;
+</td>
+<td><b>Z</b><span>&lt;<span>1</span>&gt;</span>
+</td>
+<td><b>Y</b><span>&lt;<span>1</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr></tbody></table>
+<p>Note that X has 10 bits of precision, while Y and Z only have 9. For 
+consistency, they are assumed all to have a 10-bit range and the LSB is 
+always set to zero for Y and Z.
+</p>
+<h3><span id="Interleaved_Accelerometer_Reporting">Interleaved Accelerometer Reporting</span></h3>
+<p>In <a href="#0x3e_/_0x3f:_Interleaved_Core_Buttons_and_Accelerometer_with_36_IR_bytes"> Data Reporting Mode 0x3e/0x3f</a>, the accelerometer data is spread over two reports:
+</p>
+<pre>(a1) 3e BB BB XX [...]
+(a1) 3f BB BB YY [...]
+</pre>
+<p>In this mode, the LSBs are not available. Instead, X and Y 
+acceleration is reported as a single byte, and the Z value is encoded in
+ the unused bits of the BB BB <a href="#Buttons"> Buttons</a> data as follows:
+</p>
+<table>
+
+<tbody><tr>
+<td colspan="2">&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td><b>Report ID</b>
+</td>
+<td><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0x3e
+</td>
+<td>0
+</td>
+<td>&nbsp;
+</td>
+<td colspan="2"><b>Z</b><span>&lt;<span>5:4</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr>
+<tr>
+<td>0x3e
+</td>
+<td>1
+</td>
+<td>&nbsp;
+</td>
+<td colspan="2"><b>Z</b><span>&lt;<span>7:6</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr>
+<tr>
+<td>0x3f
+</td>
+<td>0
+</td>
+<td>&nbsp;
+</td>
+<td colspan="2"><b>Z</b><span>&lt;<span>1:0</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr>
+<tr>
+<td>0x3f
+</td>
+<td>1
+</td>
+<td>&nbsp;
+</td>
+<td colspan="2"><b>Z</b><span>&lt;<span>3:2</span>&gt;</span>
+</td>
+<td colspan="5">&nbsp;
+</td></tr></tbody></table>
+<h2><span id="IR_Camera">IR Camera</span></h2>
+<figure><a href="https://wiibrew.org/wiki/File:Wii-Remote-Camera.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii-Remote-Camera.jpg" width="200" height="133" class="moz-reader-block-img"></a><figcaption>Wii remote camera</figcaption></figure><p>
+ The Wii Remote includes a 128x96 monochrome camera with built-in image 
+processing. The camera looks through an infrared pass filter in the 
+remote's plastic casing. The camera's built-in image processing is 
+capable of tracking up to 4 moving objects, and these data are the only 
+data available to the host. Raw pixel data is not available to the host,
+ so the camera cannot be used to take a conventional picture. The 
+built-in processor uses 8x subpixel analysis to provide 1024x768 
+resolution for the tracked points. The Sensor Bar that comes with the 
+Wii includes two IR LED clusters at each end, which are tracked by the 
+Wii Remote to provide pointing information. The distance between the 
+centers of the LED clusters is 20 cm (as measured on one unit).
+</p><p>The IR Camera is enabled by setting bit 2 on output reports 0x13 and 0x1a:
+</p>
+<pre>(a2) 13 04
+(a2) 1a 04
+</pre>
+<p>The first enables a 24MHz pixel clock on pin 7 of the camera.  The second pulls pin 4 low - probably an active-low enable.
+</p>
+<h3><span id="Mechanical_Characteristics">Mechanical Characteristics</span></h3>
+<p>The camera component is mounted on the bottom surface of the circuit 
+board.  The camera module itself is mounted in a socket perpendicular to
+ the circuit board; to remove just the camera module, no desoldering is 
+required.  The process is as follows:
+</p><p>First, orient the camera so that you are looking into the lens 
+with the PCB horizontal and below the lens..  There are four metal 
+clips, two on each of the
+vertical sides of the socket.  Use something tiny to slide between each 
+metal clip and the camera module: maybe wire wrap wire?  Then look at 
+the back of the camera module, opposite the lens.  There is a small 
+rectangular hole in the middle of each vertical side of the socket.  Use
+ a pin or something to pry/press the camera module out.
+</p><p>Once the camera module is free of its socket, it may be further 
+disassembled by gently prising up the tiny PCB with gold contacts; this 
+is gently glued to the module's structure, but will come loose without 
+damage.  At this point you have three pieces: the camera socket, still 
+attached to the Wiimote PCB, the camera module housing, complete with 
+lens and dichroic filter (of unknown optical properties), and a tiny PCB
+ with the camera chip and eight gold contacts on the bottom.
+</p>
+<h3><span id="Optical_Characteristics">Optical Characteristics</span></h3>
+<p>The IR camera has an effective field of view is about 33 degrees 
+horizontally and 23 degrees vertically (as measured on one unit). With 
+the IR-pass filter intact, 940nm sources are detected with approximately
+ twice the intensity of equivalent 850nm sources, but are not resolved 
+as well at close distances. If the filter is removed, it can track any 
+bright object.  However, the IR filter referred to here is not only the 
+dark plastic window of the wiimote but also a teensy slab of 
+dichroic-coated glass inside the camera module.  One may operate the 
+wiimote having installed neither, one or the other, or both filters.
+</p>
+<h3><span id="Initialization">Initialization</span></h3>
+<p><b>Reminder</b><br>Remember to set bit 2 (0x04) on the first byte of the Output Reports to write to registers!</p>
+<p>The following procedure should be followed to turn on the IR Camera:
+</p>
+<ol><li>Enable IR Camera (Send 0x04 to Output Report 0x13)</li>
+<li>Enable IR Camera 2 (Send 0x04 to Output Report 0x1a)</li>
+<li>Write 0x08 to register 0xb00030</li>
+<li>Write Sensitivity Block 1 to registers at 0xb00000</li>
+<li>Write Sensitivity Block 2 to registers at 0xb0001a</li>
+<li>Write Mode Number to register 0xb00033</li>
+<li>Write 0x08 to register 0xb00030 (again)</li></ol>
+<p>After these steps, the Wii Remote will be in one of 3 states: IR 
+camera on but not taking data, IR camera on and taking data and half 
+sensitivity, IR camera on and taking data at full sensitivity.  Which 
+state you end up in appears to be pretty much random.  Repeat the steps 
+until you're in the desired state. To avoid the random state put a delay
+ of at least 50ms between every single byte transmission.
+</p><p>The Wii preforms these steps slightly different, differences in bold:
+</p>
+<ol><li>Enable IR Pixel Clock (send <b>0x06</b> to Output Report 0x13)</li>
+<li>Enable IR Logic (send <b>0x06</b> to Output Report 0x1A)</li>
+<li>Write <b>0x01</b> to register 0xb00030</li>
+<li>Write Sensitivity Block 1 to registers at 0xb00000</li>
+<li>Write Sensitivity Block 2 to registers at 0xb0001a</li>
+<li>Write Mode Number to register 0xb00033</li>
+<li>Write 0x08 to register 0xb00030 (again)</li></ol>
+<p>Adding bit 0x02 to reports 0x13 and 0x1a is a request for acknowledgement (if set, wiimote will respond with report 0x22).
+</p>
+<h3><span id="Sensitivity_Settings">Sensitivity Settings</span></h3>
+<p>Sensitivity is controlled by two configuration blocks, 9 bytes and 2 bytes long. The following settings are known to work:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Block 1</b>
+</td>
+<td><b>Block 2</b>
+</td>
+<td><b>Notes</b>
+</td></tr>
+<tr>
+<td>00 00 00 00 00 00 90 00 C0
+</td>
+<td>40 00
+</td>
+<td>Suggested by <a href="https://wiibrew.org/wiki/User:Marcan" title="User:Marcan"> Marcan</a>
+</td></tr>
+<tr>
+<td>00 00 00 00 00 00 FF 00 0C
+</td>
+<td>00 00
+</td>
+<td>Suggested by Kestrel (max sensitivity)
+</td></tr>
+<tr>
+<td>00 00 00 00 00 00 90 00 41
+</td>
+<td>40 00
+</td>
+<td>Suggested by inio (high sensitivity)
+</td></tr>
+<tr>
+<td>02 00 00 71 01 00 64 00 fe
+</td>
+<td>fd 05
+</td>
+<td>Wii level 1
+</td></tr>
+<tr>
+<td>02 00 00 71 01 00 96 00 b4
+</td>
+<td>b3 04
+</td>
+<td>Wii level 2
+</td></tr>
+<tr>
+<td>02 00 00 71 01 00 aa 00 64
+</td>
+<td>63 03
+</td>
+<td>Wii level 3 (Suggested by Cliff)
+</td></tr>
+<tr>
+<td>02 00 00 71 01 00 c8 00 36
+</td>
+<td>35 03
+</td>
+<td>Wii level 4
+</td></tr>
+<tr>
+<td>07 00 00 71 01 00 72 00 20
+</td>
+<td>1f 03
+</td>
+<td>Wii level 5
+</td></tr></tbody></table>
+<p>The last byte of Block 1 determines the intensity sensitivity, with 
+increasing values reducing the sensitivity. Both bytes of Block 2 must 
+be zero for the full sensitivity range to be available. Setting the 
+sensitivity as high as possible, without unwanted light being tracked, 
+is recommended to achieve the highest subpixel resolution. As the 
+sensitivity is reduced, the subpixel resolution also reduces, 
+approaching the true sensor resolution of 128x96.
+</p>
+<h3><span id="Data_Formats">Data Formats</span></h3>
+<p>The IR Camera can return different sets of data describing the 
+objects it is tracking. When the IR camera identifies an object, it 
+assigns it to the first available object slot. If an object moves out of
+ view, its slot is marked as empty (returns 0xFF data), but other 
+objects retain their slots. For example, if the camera is tracking two 
+objects and the first moves out of view, the data returned will be 
+[empty, second object, empty, empty]. With more than four objects 
+visible, the camera is prone to rapidly switching between some of them. 
+This could allow perception of more than four objects, at a reduced 
+response speed and reliability.
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Mode</b>
+</td>
+<td><b>Mode Number</b>
+</td></tr>
+<tr>
+<td><a href="#Basic_Mode"> Basic</a>
+</td>
+<td>1
+</td></tr>
+<tr>
+<td><a href="#Extended_Mode"> Extended</a>
+</td>
+<td>3
+</td></tr>
+<tr>
+<td><a href="#Full_Mode"> Full</a>
+</td>
+<td>5
+</td></tr></tbody></table>
+<p>The data format MUST match the number of bytes available in the <a href="#Data_Reporting"> Reporting Mode</a> selected. Even choosing a mode with space for more bytes than necessary will not work, it has to be an exact match.
+</p>
+<h4><span id="Basic_Mode">Basic Mode</span></h4>
+<p>In Basic Mode, the IR Camera returns 10 bytes of data corresponding 
+to the X and Y locations of each of the four dots. Each location is 
+encoded in 10 bits and has a range of 0-1023 for the X dimension, and 
+0-767 for the Y dimension. Each pair of dots is packed into 5 bytes, and
+ two of these are transmitted for a total of 4 dots and 10 bytes.
+</p><p>This is the data format for a pair of objects:
+</p>
+<table>
+
+<tbody><tr>
+<td>&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td colspan="8"><b>X1</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>1
+</td>
+<td colspan="8"><b>Y1</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>2
+</td>
+<td colspan="2"><b>Y1</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X1</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>Y2</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X2</b><span>&lt;<span>9:8</span>&gt;</span>
+</td></tr>
+<tr>
+<td>3
+</td>
+<td colspan="8"><b>X2</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>4
+</td>
+<td colspan="8"><b>Y2</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr></tbody></table>
+<h4><span id="Extended_Mode">Extended Mode</span></h4>
+<p>In Extended Mode, the IR Camera returns the same data as it does in 
+Basic Mode, plus a rough size value for each object. The data is 
+returned as 12 bytes, three bytes per object. Size has a range of 0-15.
+</p><p>This is the data format for each object:
+</p>
+<table>
+
+<tbody><tr>
+<td>&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td colspan="8"><b>X</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>1
+</td>
+<td colspan="8"><b>Y</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>2
+</td>
+<td colspan="2"><b>Y</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="4"><b>S</b><span>&lt;<span>3:0</span>&gt;</span>
+</td></tr></tbody></table>
+<h4><span id="Full_Mode">Full Mode</span></h4>
+<p>In Full Mode, the IR Camera returns even more data, 9 bytes per 
+object for a total of 36 bytes for all four. The data is split up 
+between two input reports of 18 bytes each (see <a href="#0x3e_/_0x3f:_Interleaved_Core_Buttons_and_Accelerometer_with_36_IR_bytes"> Data Reporting Mode 0x3e/0x3f</a>).
+ The first three bytes of each object are the same as the extended mode,
+ and are followed by the bounding box of the pixels included in the blob
+ along with a deeper intensity value.  The data format of each object 
+is:
+</p>
+<table>
+
+<tbody><tr>
+<td>&nbsp;
+</td>
+<td colspan="8"><b>Bit</b>
+</td></tr>
+<tr>
+<td><b>Byte</b>
+</td>
+<td><b>7</b>
+</td>
+<td><b>6</b>
+</td>
+<td><b>5</b>
+</td>
+<td><b>4</b>
+</td>
+<td><b>3</b>
+</td>
+<td><b>2</b>
+</td>
+<td><b>1</b>
+</td>
+<td><b>0</b>
+</td></tr>
+<tr>
+<td>0
+</td>
+<td colspan="8"><b>X</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>1
+</td>
+<td colspan="8"><b>Y</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>2
+</td>
+<td colspan="2"><b>Y</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="2"><b>X</b><span>&lt;<span>9:8</span>&gt;</span>
+</td>
+<td colspan="4"><b>S</b><span>&lt;<span>3:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>3
+</td>
+<td>0
+</td>
+<td colspan="7"><b>X min</b><span>&lt;<span>6:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>4
+</td>
+<td>0
+</td>
+<td colspan="7"><b>Y min</b><span>&lt;<span>6:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>5
+</td>
+<td>0
+</td>
+<td colspan="7"><b>X max</b><span>&lt;<span>6:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>6
+</td>
+<td>0
+</td>
+<td colspan="7"><b>Y max</b><span>&lt;<span>6:0</span>&gt;</span>
+</td></tr>
+<tr>
+<td>7
+</td>
+<td colspan="8">0
+</td></tr>
+<tr>
+<td>8
+</td>
+<td colspan="8"><b>Intensity</b><span>&lt;<span>7:0</span>&gt;</span>
+</td></tr></tbody></table>
+<h2><span id="Feedback_Features">Feedback Features</span></h2>
+<p>The Wii Remote sports three feedback features: <a href="#Player_LEDs"> Player LEDs</a>, <a href="#Rumble"> Rumble</a>, and the <a href="#Speaker"> Speaker</a>.
+</p>
+<h2><span id="Player_LEDs">Player LEDs</span></h2>
+<figure><a href="https://wiibrew.org/wiki/File:Wii-Remote-LEDs.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii-Remote-LEDs.jpg" width="200" height="65" class="moz-reader-block-img"></a><figcaption>Wii remote player LEDs</figcaption></figure><p>There
+ are four blue LEDs on the front face of the Wii Remote. During 
+discovery and before initialization, these LEDs blink at a fixed rate. 
+The number of blinking LEDs is proportional to the battery voltage, 
+indicating battery charge (all four are lit for newly charged batteries,
+ and only the first is lit if the batteries are low and should be 
+replaced).
+</p><p>During gameplay with the Wii, one LED is lit to indicate the 
+player number assigned to the Wii Remote. However, the LEDs are 
+independently controllable by the host, and can be set to display any 
+pattern. They can also be modulated at a moderately high speed, enabling
+ some brightness control at the cost of a lot of Bluetooth bandwidth. 
+Sigma-delta modulation works reasonably well for this.
+</p><p>The LEDs can be controlled by sending a report with ID 0x11:
+</p>
+<pre>(a2) 11 LL
+</pre>
+<p>The high nybble of LL controls the four LEDs. Bit 4 of LL controls the first LED, and bit 7 controls the last:
+</p>
+<table>
+
+<tbody><tr>
+<td><b>Bit</b>
+</td>
+<td><b>Mask</b>
+</td>
+<td><b>LEDs</b>
+</td></tr>
+<tr>
+<td>4
+</td>
+<td>0x10
+</td>
+<td>
+<table>
+
+<tbody><tr>
+<td>·<br><span>■</span>
+</td>
+<td>··<br><span>■</span>
+</td>
+<td>···<br><span>■</span>
+</td>
+<td>····<br><span>■</span>
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>5
+</td>
+<td>0x20
+</td>
+<td>
+<table>
+
+<tbody><tr>
+<td>·<br><span>■</span>
+</td>
+<td>··<br><span>■</span>
+</td>
+<td>···<br><span>■</span>
+</td>
+<td>····<br><span>■</span>
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>6
+</td>
+<td>0x40
+</td>
+<td>
+<table>
+
+<tbody><tr>
+<td>·<br><span>■</span>
+</td>
+<td>··<br><span>■</span>
+</td>
+<td>···<br><span>■</span>
+</td>
+<td>····<br><span>■</span>
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>7
+</td>
+<td>0x80
+</td>
+<td>
+<table>
+
+<tbody><tr>
+<td>·<br><span>■</span>
+</td>
+<td>··<br><span>■</span>
+</td>
+<td>···<br><span>■</span>
+</td>
+<td>····<br><span>■</span>
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+<p>Turning off all LEDs for an extended period of time is discouraged, 
+as it might lead the user to believe the Wii Remote is turned off and 
+disconnected, when in fact it is active.
+</p><p>The LEDs are surface mount parts, driven at 2.66 VDC.
+</p>
+<h2><span id="Rumble">Rumble</span></h2>
+<figure><a href="https://wiibrew.org/wiki/File:Wii_Remote_Rumble.jpg"><img src="Wiimote%20-%20WiiBrew_files/200px-Wii_Remote_Rumble.jpg" width="200" height="133" class="moz-reader-block-img"></a><figcaption>Wii remote rumble motor</figcaption></figure><p>The
+ Wii Remote includes a rumble feature, which is implemented as a small 
+motor attached to an off-center weight. It will cause the controller to 
+vibrate when activated.
+</p><p>The rumble motor is primarilly controlled via the report with ID 0x10:
+</p>
+<pre>(a2) 10 RR
+</pre>
+<p>Setting RR to 1 enables rumble, and setting it to 0 disables rumble. 
+ However, note that the rumble motor can be turned on or off through any
+ of the Output Reports, not just 0x10. Setting the LSB (bit 0) of the 
+first byte of any output report will activate the rumble motor, and 
+unsetting it will deactivate it. For example, the following report will 
+turn the rumble motor on:
+</p>
+<pre>(a2) 11 01
+</pre>
+<p>However, this will also have the side-effect of turning off all LEDs.
+ The rumble bit needs to be set properly with every single report sent, 
+to avoid inadvertently turning the rumble motor off.
+</p><p>Different photos of the rumble motor hardware show different markings. One example is <i>SEM 8728DA</i>.
+ The Wii Remote drives it at 3.3 VDC and it draws 35 mA. It would be 
+reasonable to think that the rumble motor could be removed and the motor
+ replaced with another device with equal voltage and equal or less 
+current draw.
+</p>
+<h2><span id="Speaker">Speaker</span></h2>
+<p>The Wii Remote has a small low-quality 21mm piezo-electric speaker, 
+used for short sound effects during gameplay. The sound is streamed 
+directly from the host, and the speaker has some adjustable parameters.
+</p><p>The speaker is controlled by using three output reports, together
+ with a section of the register address space of the Wii Remote.
+</p><p>Report 0x14 is used to enable or disable the speaker. Setting bit
+ 2 will enable the speaker, and clearing it will disable it. For 
+example, to enable the speaker, send:
+</p>
+<pre>(a2) 14 04
+</pre>
+<p>Report 0x19 is used to mute or unmute the speaker, and works 
+identically to report 0x14. 0x04 will mute the speaker, and 0x00 will 
+unmute it.
+</p><p>Report 0x18 is used to send speaker data. 1-20 bytes may be sent at once:
+</p>
+<pre>(a2) 18 LL DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD DD
+</pre>
+<p>LL specifies the data length, shifted left by three bits. The DD 
+bytes are the speaker data. To fullfill the report length requirements, 
+the data must be padded if it is less than 20 bytes long. Sound data 
+must be sent at the proper rate.
+</p>
+<h3><span id="Initialization_Sequence">Initialization Sequence</span></h3>
+<p><b>Reminder</b><br>Remember to set bit 2 (0x04) on the first byte of the Output Reports to write to registers!</p>
+<p>The following sequence will initialize the speaker:
+</p>
+<ol><li>Enable speaker (Send 0x04 to Output Report 0x14)</li>
+<li>Mute speaker (Send 0x04 to Output Report 0x19)</li>
+<li>Write 0x01 to register 0xa20009</li>
+<li>Write 0x08 to register 0xa20001</li>
+<li>Write <a href="#Speaker_Configuration"> 7-byte configuration</a> to registers 0xa20001-0xa20008</li>
+<li>Write 0x01 to register 0xa20008</li>
+<li>Unmute speaker (Send 0x00 to Output Report 0x19)</li></ol>
+<h3><span id="Speaker_Configuration">Speaker Configuration</span></h3>
+<p>7 bytes control the speaker settings, including volume. The full 
+purpose of these bytes is not known, but the following values seem to 
+produce some sound:
+</p>
+<pre>00 FF RR RR VV 00 00
+</pre>
+<p>RR RR specify the sample rate (little-endian format), using the following formulae:
+</p><p>pcm_sample_rate = 12000000 / rate_value
+adpcm_sample_rate = 6000000 / rate_value
+</p><p>The standard value is 0x7d0, for 3000Hz 4-bit PCM
+</p><p>FF configures the data format. Setting it to 0x40 configures the 
+speaker to use signed 8-bit PCM, while setting it to 0x00 configures it 
+to use 4-bit Yamaha ADPCM. VV specifies the volume, which has a range of
+ 0x00-0xFF for 8-bit mode, and 0x00-0x40 for 4-bit mode.
+</p><p>This configuration can be used to play 4-bit ADPCM sound at 3000Hz:
+</p>
+<pre>00 00 D0 07 40 00 00
+</pre>
+<p>This configuration can be used to play 8-bit PCM sound at 1500Hz sample rate:
+</p>
+<pre>00 40 40 1f 40 00 00
+</pre>
+<p>It looks like the best compromise between sample rate and slow 
+bluetooth chipsets / drivers is playing 8-bit PCM at 2000Hz, so a new 
+20-byte chunk of audio data is sent every 10 milliseconds.
+</p>
+<pre>00 40 70 17 60 00 00
+</pre>
+<h3><span id="Sound_Data_Format">Sound Data Format</span></h3>
+<p>The Wii Remote can use multiple sound formats at multiple sampling 
+rates. PC drivers currently seem unable to keep up with the higher 
+rates.
+</p><p>The 4-bit ADPCM is Yamaha ADPCM (for example, as implemented in ffmpeg).
+</p><p>8-bit signed PCM mode works, but when in 8-bit mode the sampling 
+frequency must be made so low that the audio quality is pretty bad.
+</p>
+<h2><span id="Extension_Controllers">Extension Controllers</span></h2>
+<p><i><a href="https://wiibrew.org/wiki/Wiimote/Extension_Controllers" title="Wiimote/Extension Controllers">Wiimote/Extension Controllers</a></i>
+</p>
+<h2><span id="Notes">Notes</span></h2>
+<h2><span id="See_Also">See Also</span></h2>
+<ul><li><a href="https://wiibrew.org/wiki/Wiimote/Firmware" title="Wiimote/Firmware">Disassembled Firmware</a> shows raw firmware dumps from several wiimotes.</li>
+<li><a href="https://wiibrew.org/wiki/Wiimote/Extension_Controllers" title="Wiimote/Extension Controllers">Extension Controllers</a> explains the protocol used by the wiimote extensions.</li>
+<li><a href="https://wiibrew.org/wiki/Wiimote/Motion_analysis" title="Wiimote/Motion analysis">Motion analysis</a> gives hints how to implement accelerometer parsers.</li>
+<li><a href="https://wiibrew.org/wiki/Wiimote/Pointing" title="Wiimote/Pointing">Pointing</a> shows how to create a pointing device with IR data.</li>
+<li><a href="https://wiibrew.org/wiki/Wiimote/Library" title="Wiimote/Library">Library</a> lists several wiimote library implementations.</li>
+<li><a href="https://wiibrew.org/wiki/Wiimote/Mii_Data" title="Wiimote/Mii Data">Mii Data</a> shows raw wiimote data dumps.</li></ul>
+<h2><span id="Acknowledgements">Acknowledgements</span></h2>
+<p><i>Some of the information here is based on the documentation at Wiili</i>
+</p>
+
+
+
+
+</div></div></div>
+      </div>
+
+      <div>
+        <div class="reader-message"></div>
+      </div>
+      <div aria-owns="toolbar"></div>
+    </div>
+  
+
+</body></html>
