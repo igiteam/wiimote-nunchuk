@@ -26,7 +26,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
 #import "WiimoteManager.h"
 #import <IOBluetooth/IOBluetooth.h>
 #import <AppKit/AppKit.h>
-#import <ApplicationServices/ApplicationServices.h>
 
 #define PSM_CTRL 0x11
 #define PSM_INTR 0x13
@@ -54,16 +53,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
 @property (nonatomic, strong) NSTimer *inquiryTimer;
 @property (nonatomic, assign) BOOL inquiryActive;
 @property (nonatomic, assign) BOOL reconnecting;
-
-// Mouse control properties
-@property (nonatomic, assign) BOOL mouseControlEnabled;
-@property (nonatomic, assign) float mouseSensitivity;
-@property (nonatomic, assign) float mouseSmoothing;
-@property (nonatomic, assign) CGPoint lastMousePos;
-@property (nonatomic, assign) float smoothX;
-@property (nonatomic, assign) float smoothY;
-@property (nonatomic, assign) BOOL buttonAPressed;
-@property (nonatomic, assign) BOOL buttonBPressed;
 @end
 
 @implementation WiimoteManager
@@ -85,20 +74,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         _retryTimer = nil;
         _inquiryTimer = nil;
         _inquiryActive = NO;
-        
-        // Mouse control defaults
-        _mouseControlEnabled = YES;
-        _mouseSensitivity = 1.5;
-        _mouseSmoothing = 0.7;
-        _smoothX = 0;
-        _smoothY = 0;
-        _buttonAPressed = NO;
-        _buttonBPressed = NO;
-        
-        printf("[Wiimote] IR Mouse Controller Init\n");
-        printf("  Mouse Control: %s\n", _mouseControlEnabled ? "ENABLED" : "DISABLED");
-        printf("  Sensitivity: %.1f\n", _mouseSensitivity);
-        printf("  Smoothing: %.1f\n", _mouseSmoothing);
+        printf("[Wiimote] IR Debugger Init\n");
         fflush(stdout);
     }
     return self;
@@ -111,7 +87,9 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("[Wiimote] Starting...\n");
     fflush(stdout);
     
+    // Clean up any stale connections first
     [self cleanupStaleConnections];
+    
     [self startDiscoveryWithRetry:NO];
 }
 
@@ -130,6 +108,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
                 usleep(500000);
             }
             
+            // Try to remove pairing if available
             if ([dev respondsToSelector:@selector(removePairing)]) {
                 printf("[Wiimote] Removing pairing...\n");
                 fflush(stdout);
@@ -277,6 +256,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         usleep(500000);
     }
     
+    // Use a slightly different approach - try to open the channels with a small delay
     usleep(200000);
     
     IOBluetoothL2CAPChannel *c = nil;
@@ -323,12 +303,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
 
 - (void)onConnected {
     printf("[Wiimote] CONNECTED!\n");
-    printf("[Wiimote] IR Mouse Controller Active\n");
-    printf("[Wiimote] Controls:\n");
-    printf("  - Aim at sensor bar to move mouse\n");
-    printf("  - Press A to left-click\n");
-    printf("  - Press B to right-click\n");
-    printf("  - Press Home to toggle mouse control\n");
     fflush(stdout);
     
     self.retryCount = 0;
@@ -349,7 +323,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     [self initIRWithRetry:0];
     
-    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.02  // 50Hz for smoother mouse
+    self.timer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                                    target:self
                                                  selector:@selector(pollIR)
                                                  userInfo:nil
@@ -361,13 +335,14 @@ cat > "src/WiimoteManager.m" << 'EOF'
     self.statusHeaderShown = YES;
     printf("\n");
     printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║  IR MOUSE CONTROLLER STATUS                                 ║\n");
+    printf("║  IR DEBUGGER STATUS                                        ║\n");
     printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║  Mouse Control: %-3s                                        ║\n", self.mouseControlEnabled ? "ON " : "OFF");
-    printf("║  Sensitivity:   %.1f                                        ║\n", self.mouseSensitivity);
-    printf("║  Smoothing:     %.1f                                        ║\n", self.mouseSmoothing);
-    printf("║  IR Bottom:     %-3s                                        ║\n", self.irBottom ? "YES" : "NO");
-    printf("║  Battery:       %d%%                                         ║\n", self.batteryPercent);
+    printf("║  IR Enabled:   YES                                         ║\n");
+    printf("║  IR Mode:      Basic (0x01)                                ║\n");
+    printf("║  IR Bottom:    %-3s                                          ║\n", self.irBottom ? "YES" : "NO");
+    printf("║  Sensitivity:  Level %d                                     ║\n", self.sensitivityLevel);
+    printf("║  Debug Output: %-3s                                          ║\n", self.debugIR ? "YES" : "NO");
+    printf("║  Battery:      %d%%                                         ║\n", self.batteryPercent);
     printf("╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
     fflush(stdout);
@@ -377,36 +352,46 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("\n========== INIT IR ==========\n");
     fflush(stdout);
     
+    // STEP 1: Enable IR with 0x06 (both pixel clock and enable)
     uint8_t irEnable[] = {0xA2, 0x13, 0x06};
     [self.ctrl writeSync:irEnable length:3];
     usleep(50000);
     
+    // STEP 2: Enable IR 2 with 0x06
     uint8_t irEnable2[] = {0xA2, 0x1A, 0x06};
     [self.ctrl writeSync:irEnable2 length:3];
     usleep(50000);
     
+    // STEP 3: Write 0x01 to 0xB00030 (enable IR sensor)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x01" length:1]];
     usleep(50000);
     
+    // STEP 4: Write sensitivity blocks (using Level 3 which is standard)
+    // Block 1: 9 bytes at 0xB00000
     uint8_t block1[] = {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64};
     [self writeMemory:0xB00000 data:[NSData dataWithBytes:block1 length:9]];
     usleep(50000);
     
+    // Block 2: 2 bytes at 0xB0001A
     uint8_t block2[] = {0x63, 0x03};
     [self writeMemory:0xB0001A data:[NSData dataWithBytes:block2 length:2]];
     usleep(50000);
     
-    uint8_t irMode = 0x03;
+    // STEP 5: Write IR mode (0x03 for Extended Mode - needed for 12 bytes)
+    uint8_t irMode = 0x03;  // 0x01 = Basic (10 bytes), 0x03 = Extended (12 bytes)
     [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
     usleep(50000);
     
+    // STEP 6: Write 0x08 to 0xB00030 (enable IR with 8-bit mode)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
     usleep(50000);
     
+    // STEP 7: Set reporting mode to 0x33
     [self setReportingMode:0x33];
     usleep(50000);
     
-    printf("[IR] Enabled (Mode: Extended, Sens: Level 3)\n");
+    printf("[IR] Enabled (Bottom: %s, Mode: Extended (0x03), Sens: Level 3)\n", 
+           self.irBottom ? "YES" : "NO");
     printf("==================================\n\n");
     fflush(stdout);
     
@@ -439,7 +424,10 @@ cat > "src/WiimoteManager.m" << 'EOF'
     if (data.length > 16) return;
     
     NSMutableData *report = [NSMutableData data];
-    uint8_t flags = 0x04;
+    
+    // For register writes (address >= 0xA00000), we need 0x04
+    // For EEPROM writes (address < 0xA00000), we need 0x00
+    uint8_t flags = 0x04;  // Always use 0x04 for registers
     [report appendBytes:&flags length:1];
     
     uint8_t addrBytes[3] = {
@@ -453,6 +441,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [report appendBytes:&size length:1];
     [report appendData:data];
     
+    // Pad to 16 bytes
     NSUInteger padding = 16 - data.length;
     for (int i = 0; i < padding; i++) {
         uint8_t zero = 0x00;
@@ -471,6 +460,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [report appendBytes:&reportID length:1];
     [report appendData:data];
     
+    // Pad to proper length if needed
     NSUInteger totalLen = report.length;
     if (totalLen < 21) {
         uint8_t padding[21] = {0};
@@ -491,6 +481,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self.ctrl writeSync:report length:4];
 }
 
+
 - (void)initIRWithRetry:(int)retryCount {
     if (retryCount > 3) {
         printf("[IR] Failed to initialize after 3 attempts\n");
@@ -503,7 +494,9 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     [self initIR];
     
+    // Wait for data to come through
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // Check if we're getting IR data with dots
         if (self.frameCount < 5) {
             printf("[IR] No data received, retrying...\n");
             fflush(stdout);
@@ -527,114 +520,10 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self.ctrl writeSync:rumble length:3];
 }
 
-- (void)handleMouseMovement:(uint16_t)x withY:(uint16_t)y {
-    if (!self.mouseControlEnabled) return;
-    if (x == 0xFFFF || y == 0xFFFF) return;
-    
-    // Get screen dimensions
-    CGDirectDisplayID displayID = CGMainDisplayID();
-    CGFloat screenWidth = CGDisplayPixelsWide(displayID);
-    CGFloat screenHeight = CGDisplayPixelsHigh(displayID);
-    
-    // Map IR coordinates (0-1023) to screen coordinates
-    // Center the cursor in the middle of the screen
-    float targetX = (x / 1023.0) * screenWidth;
-    float targetY = screenHeight - ((y / 1023.0) * screenHeight); // Flip Y
-    
-    // Apply sensitivity
-    float centerX = screenWidth / 2;
-    float centerY = screenHeight / 2;
-    float deltaX = (targetX - centerX) * self.mouseSensitivity;
-    float deltaY = (targetY - centerY) * self.mouseSensitivity;
-    targetX = centerX + deltaX;
-    targetY = centerY + deltaY;
-    
-    // Clamp to screen bounds
-    targetX = MAX(0, MIN(screenWidth, targetX));
-    targetY = MAX(0, MIN(screenHeight, targetY));
-    
-    // Apply smoothing (exponential moving average)
-    if (self.smoothX == 0 && self.smoothY == 0) {
-        self.smoothX = targetX;
-        self.smoothY = targetY;
-    } else {
-        float alpha = 1.0 - self.mouseSmoothing;
-        self.smoothX = self.smoothX * self.mouseSmoothing + targetX * alpha;
-        self.smoothY = self.smoothY * self.mouseSmoothing + targetY * alpha;
-    }
-    
-    // Move mouse
-    CGPoint newPos = CGPointMake(self.smoothX, self.smoothY);
-    CGEventMove(CGEventCreate(NULL), newPos.x, newPos.y);
-}
-
-- (void)handleButtons:(uint16_t)buttons {
-    // Button A (bit 3 in second byte)
-    BOOL aPressed = (buttons & 0x0800) != 0;
-    // Button B (bit 4 in first byte)
-    BOOL bPressed = (buttons & 0x0010) != 0;
-    // Home button (bit 7 in second byte)
-    BOOL homePressed = (buttons & 0x8000) != 0;
-    
-    // Handle Home button - toggle mouse control
-    if (homePressed && !self.buttonAPressed) {  // Use button state to detect edge
-        self.mouseControlEnabled = !self.mouseControlEnabled;
-        printf("[Wiimote] Mouse control: %s\n", self.mouseControlEnabled ? "ENABLED" : "DISABLED");
-        fflush(stdout);
-        
-        // Update LED to show status
-        if (self.mouseControlEnabled) {
-            [self setLED:0x10];  // LED 1
-        } else {
-            [self setLED:0x40];  // LED 3
-        }
-    }
-    
-    // Handle A button (left click)
-    if (aPressed && !self.buttonAPressed) {
-        [self simulateClick:kCGMouseButtonLeft down:YES];
-        printf("[Mouse] Left click DOWN\n");
-        fflush(stdout);
-    } else if (!aPressed && self.buttonAPressed) {
-        [self simulateClick:kCGMouseButtonLeft down:NO];
-        printf("[Mouse] Left click UP\n");
-        fflush(stdout);
-    }
-    
-    // Handle B button (right click)
-    if (bPressed && !self.buttonBPressed) {
-        [self simulateClick:kCGMouseButtonRight down:YES];
-        printf("[Mouse] Right click DOWN\n");
-        fflush(stdout);
-    } else if (!bPressed && self.buttonBPressed) {
-        [self simulateClick:kCGMouseButtonRight down:NO];
-        printf("[Mouse] Right click UP\n");
-        fflush(stdout);
-    }
-    
-    self.buttonAPressed = aPressed;
-    self.buttonBPressed = bPressed;
-}
-
-- (void)simulateClick:(CGMouseButton)button down:(BOOL)down {
-    CGEventRef event = CGEventCreateMouseEvent(
-        NULL,
-        down ? kCGEventLeftMouseDown : kCGEventLeftMouseUp,
-        CGEventGetLocation(CGEventCreate(NULL)),
-        button
-    );
-    
-    // For right button, need to adjust event type
-    if (button == kCGMouseButtonRight) {
-        CGEventSetType(event, down ? kCGEventRightMouseDown : kCGEventRightMouseUp);
-    }
-    
-    CGEventPost(kCGHIDEventTap, event);
-    CFRelease(event);
-}
-
 - (void)parseIRData:(uint8_t *)data {
     self.frameCount++;
+    
+    if (self.frameCount % 5 != 0) return;
     
     // In report mode 0x33:
     // data[0-1] = Buttons
@@ -642,10 +531,23 @@ cat > "src/WiimoteManager.m" << 'EOF'
     // data[5-16] = IR data (12 bytes)
     
     uint16_t buttons = (data[1] << 8) | data[0];
+    
+    printf("[RAW IR] ");
+    for (int i = 0; i < 12; i++) {
+        printf("%02X ", data[i]);
+    }
+    printf("| \n");
+    
+    // Extract IR data starting at offset 5
     uint8_t *irData = data + 5;
     
-    // Handle button presses
-    [self handleButtons:buttons];
+    printf("  Buttons: 0x%04X\n", buttons);
+    printf("  Accel: %02X %02X %02X\n", data[2], data[3], data[4]);
+    printf("  IR Bytes: ");
+    for (int i = 0; i < 12; i++) {
+        printf("[%d]=%02X ", i, irData[i]);
+    }
+    printf("\n");
     
     // Check if we have any IR data
     BOOL hasData = NO;
@@ -654,59 +556,46 @@ cat > "src/WiimoteManager.m" << 'EOF'
     }
     
     if (!hasData) {
-        if (self.debugIR && self.frameCount % 20 == 0) {
-            printf("[IR] No dots detected\n");
-            fflush(stdout);
-        }
+        printf("  NO IR DATA DETECTED\n");
+        fflush(stdout);
         return;
     }
     
-    // Parse dots and find the best one for mouse control
-    // Use the first valid dot with good size
-    BOOL foundDot = NO;
-    uint16_t bestX = 0;
-    uint16_t bestY = 0;
-    uint8_t bestSize = 0;
+    printf("  IR Format: Extended Mode (12 bytes)\n");
+    printf("  Dot1: X,Y,Size | Dot2: X,Y,Size | Dot3: X,Y,Size | Dot4: X,Y,Size\n");
     
+    int dotCount = 0;
+    
+    // Parse 4 dots, each with 3 bytes (X, Y, Size)
     for (int dot = 0; dot < 4; dot++) {
         int offset = dot * 3;
         uint8_t xLow = irData[offset];
         uint8_t yLow = irData[offset + 1];
         uint8_t high = irData[offset + 2];
         
+        // Skip if this dot is empty (all 0xFF)
         if (xLow == 0xFF && yLow == 0xFF && high == 0xFF) {
             continue;
         }
         
+        // Extract 10-bit X and Y values
         uint16_t x = xLow | ((high & 0x03) << 8);
         uint16_t y = yLow | ((high & 0x0C) << 6);
         uint8_t size = (high & 0xF0) >> 4;
         
-        // Prefer larger size (closer to sensor bar)
-        if (!foundDot || size > bestSize) {
-            bestX = x;
-            bestY = y;
-            bestSize = size;
-            foundDot = YES;
+        printf("  Dot%d: X=%04d (0x%04X), Y=%04d (0x%04X), Size=%d", 
+               dot + 1, x, x, y, y, size);
+        
+        if (self.irBottom) {
+            y = 1023 - y;
+            printf(" (flipped Y to %04d)", y);
         }
+        printf("\n");
+        dotCount++;
     }
     
-    if (foundDot) {
-        // Apply IR bottom flip if enabled
-        if (self.irBottom) {
-            bestY = 1023 - bestY;
-        }
-        
-        // Move mouse
-        [self handleMouseMovement:bestX withY:bestY];
-        
-        if (self.debugIR && self.frameCount % 5 == 0) {
-            printf("[IR] Dot: X=%04d Y=%04d Size=%d | Mouse: %s\n", 
-                   bestX, bestY, bestSize, 
-                   self.mouseControlEnabled ? "ACTIVE" : "PAUSED");
-            fflush(stdout);
-        }
-    }
+    printf("  Total dots detected: %d\n", dotCount);
+    fflush(stdout);
 }
 
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
@@ -717,20 +606,29 @@ cat > "src/WiimoteManager.m" << 'EOF'
     uint8_t id = d[1];
     
     if (id == 0x33 && len >= 17) {
+        // Parse ALL data as IR - ignore extension
         [self parseIRData:d + 5];
     } else if (id == 0x20) {
         if (len >= 8) {
             self.batteryPercent = (d[7] * 100) / 0xC0;
             
+            // Check if extension is connected
             BOOL extConnected = (d[4] & 0x02) != 0;
+            
             if (extConnected) {
+                // EXTENSION DETECTED - DISABLE IT!
                 static BOOL extensionDisabled = NO;
                 if (!extensionDisabled) {
                     printf("[Wii] Extension detected! Disabling...\n");
                     fflush(stdout);
+                    
+                    // Disable extension
                     [self writeMemory:0xA40040 data:[NSData dataWithBytes:"\x00" length:1]];
                     usleep(50000);
+                    
                     extensionDisabled = YES;
+                    
+                    // Re-init IR after disabling extension
                     [self initIRWithRetry:0];
                 }
             }
