@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wiimote - RAW DATA DEBUGGER
+# Wiimote - RAW DATA DEBUGGER WITH IR + ALL BUTTONS + DIRECTION
 
 set -e
 
@@ -11,7 +11,7 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║              WIIMOTE - RAW DATA DEBUGGER                     ║"
+echo "║              WIIMOTE - RAW DATA DEBUGGER + IR                ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -26,6 +26,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
 #import "WiimoteManager.h"
 #import <IOBluetooth/IOBluetooth.h>
 #import <AppKit/AppKit.h>
+#import <math.h>
 
 #define PSM_CTRL 0x11
 #define PSM_INTR 0x13
@@ -53,6 +54,17 @@ cat > "src/WiimoteManager.m" << 'EOF'
 @property (nonatomic, assign) int calXSum;
 @property (nonatomic, assign) int calYSum;
 @property (nonatomic, assign) BOOL calibrating;
+// IR properties
+@property (nonatomic, assign) BOOL irEnabled;
+@property (nonatomic, assign) BOOL irBottom;
+@property (nonatomic, assign) int irX1, irY1, irX2, irY2, irX3, irY3, irX4, irY4;
+// Wiimote buttons
+@property (nonatomic, assign) BOOL btnA, btnB, btn1, btn2, btnPlus, btnMinus, btnHome;
+@property (nonatomic, assign) BOOL btnUp, btnDown, btnLeft, btnRight;
+// RAW IR debug
+@property (nonatomic, assign) BOOL debugIR;
+// Last display to prevent flicker
+@property (nonatomic, strong) NSString *lastDisplay;
 @end
 
 @implementation WiimoteManager
@@ -77,7 +89,18 @@ cat > "src/WiimoteManager.m" << 'EOF'
         _calSamples = 0;
         _calXSum = 0;
         _calYSum = 0;
-        printf("[Wiimote] Init\n");
+        // IR enabled for debugging
+        _irEnabled = YES;
+        _irBottom = YES;
+        _debugIR = NO;  // Turn off raw IR debug by default
+        _irX1 = _irY1 = _irX2 = _irY2 = _irX3 = _irY3 = _irX4 = _irY4 = -1;
+        // Buttons
+        _btnA = _btnB = _btn1 = _btn2 = _btnPlus = _btnMinus = _btnHome = NO;
+        _btnUp = _btnDown = _btnLeft = _btnRight = NO;
+        _lastDisplay = @"";
+        printf("[Wiimote] Init (IR: %s, Bottom: %s)\n", 
+               _irEnabled ? "ON" : "OFF",
+               _irBottom ? "YES" : "NO");
         fflush(stdout);
     }
     return self;
@@ -96,16 +119,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self.timer invalidate];
     self.timer = nil;
     [self disconnect];
-    printf("[Wiimote] Stopped\n");
-    fflush(stdout);
-}
-
-- (void)updateDisplay {
-    printf("\r[Wiimote] Battery: %d%%  Nunchuk: %s  Joy: (%3d, %3d)  C:%d Z:%d   ",
-           self.battery,
-           self.extConnected ? "CONNECTED" : "DISCONNECTED",
-           self.joyX, self.joyY,
-           self.cPressed, self.zPressed);
+    printf("\n[Wiimote] Stopped\n");
     fflush(stdout);
 }
 
@@ -179,9 +193,26 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("[Wiimote] Rumble test complete\n");
     fflush(stdout);
     
+    // 1. First set reporting mode to 0x37 (includes IR)
     [self setReportingMode:0x37];
     usleep(50000);
     
+    // 2. Enable IR Camera (0x13 and 0x1A) - RIGHT AFTER MODE SET
+    if (self.irEnabled) {
+        printf("[IR] Enabling IR Camera...\n");
+        uint8_t irEnable[] = {0xA2, 0x13, 0x04};
+        [self.ctrl writeSync:irEnable length:3];
+        usleep(50000);
+        
+        uint8_t irEnable2[] = {0xA2, 0x1A, 0x04};
+        [self.ctrl writeSync:irEnable2 length:3];
+        usleep(50000);
+        
+        // 3. Initialize IR registers
+        [self initIR];
+    }
+    
+    // 4. Then init Nunchuk (if connected)
     [self initNunchuk];
     
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.05
@@ -189,6 +220,38 @@ cat > "src/WiimoteManager.m" << 'EOF'
                                                  selector:@selector(pollStatus)
                                                  userInfo:nil
                                                   repeats:YES];
+}
+
+- (void)initIR {
+    printf("\n========== INIT IR REGISTERS ==========\n");
+    fflush(stdout);
+    
+    // Write 0x08 to 0xb00030 (first time)
+    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
+    usleep(50000);
+    
+    // Write sensitivity block (Level 3)
+    uint8_t block1[] = {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64};
+    uint8_t block2[] = {0x63, 0x03};
+    
+    [self writeMemory:0xB00000 data:[NSData dataWithBytes:block1 length:9]];
+    usleep(50000);
+    
+    [self writeMemory:0xB0001A data:[NSData dataWithBytes:block2 length:2]];
+    usleep(50000);
+    
+    // Set IR mode (Basic mode - 0x01)
+    uint8_t irMode = 0x01;
+    [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
+    usleep(50000);
+    
+    // Write 0x08 to 0xb00030 (again - SECOND TIME!)
+    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
+    usleep(50000);
+    
+    printf("[IR] Registers initialized! (Bottom: %s, Mode: Basic)\n", self.irBottom ? "YES" : "NO");
+    printf("==================================\n\n");
+    fflush(stdout);
 }
 
 - (void)initNunchuk {
@@ -326,7 +389,111 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self.ctrl writeSync:rumble length:3];
 }
 
-- (void)parseNunchukData:(uint8_t *)decrypted withID:(uint8_t)id {
+- (void)parseWiimoteButtons:(uint8_t *)data {
+    // data[0] and data[1] are the button bytes
+    // 0 = pressed (active low)
+    self.btnLeft   = (data[0] & 0x01) == 0;
+    self.btnRight  = (data[0] & 0x02) == 0;
+    self.btnDown   = (data[0] & 0x04) == 0;
+    self.btnUp     = (data[0] & 0x08) == 0;
+    self.btnPlus   = (data[0] & 0x10) == 0;
+    
+    self.btn2      = (data[1] & 0x01) == 0;
+    self.btn1      = (data[1] & 0x02) == 0;
+    self.btnB      = (data[1] & 0x04) == 0;
+    self.btnA      = (data[1] & 0x08) == 0;
+    self.btnMinus  = (data[1] & 0x10) == 0;
+    self.btnHome   = (data[1] & 0x80) == 0;
+}
+
+- (void)parseIRData:(uint8_t *)data {
+    if (!self.irEnabled) return;
+    
+    // RAW IR debug - show all 10 bytes
+    if (self.debugIR) {
+        printf("\n[IR RAW] ");
+        for (int i = 0; i < 10; i++) {
+            printf("%02X ", data[i]);
+        }
+        printf("\n");
+        fflush(stdout);
+    }
+    
+    // Check if IR data is valid (not all 0xFF)
+    BOOL hasData = NO;
+    for (int i = 0; i < 10; i++) {
+        if (data[i] != 0xFF) { hasData = YES; break; }
+    }
+    
+    if (!hasData) {
+        self.irX1 = self.irX2 = self.irX3 = self.irX4 = -1;
+        self.irY1 = self.irY2 = self.irY3 = self.irY4 = -1;
+        return;
+    }
+    
+    // Parse Basic Mode (5 bytes per 2 objects)
+    // Bytes 0-4: Object 1 and 2
+    // Bytes 5-9: Object 3 and 4
+    
+    // Object 1 (from bytes 0, 1, 2)
+    if (data[0] != 0xFF || data[1] != 0xFF) {
+        uint16_t x1 = data[0] | ((data[2] & 0x30) << 4);  // X1 high bits in bits 4-5
+        uint16_t y1 = data[1] | ((data[2] & 0xC0) << 2);  // Y1 high bits in bits 6-7
+        self.irX1 = x1;
+        self.irY1 = self.irBottom ? (1023 - y1) : y1;
+    } else {
+        self.irX1 = -1; self.irY1 = -1;
+    }
+    
+    // Object 2 (from bytes 3, 4, 2)
+    if (data[3] != 0xFF || data[4] != 0xFF) {
+        uint16_t x2 = data[3] | ((data[2] & 0x03) << 8);  // X2 high bits in bits 0-1
+        uint16_t y2 = data[4] | ((data[2] & 0x0C) << 6);  // Y2 high bits in bits 2-3
+        self.irX2 = x2;
+        self.irY2 = self.irBottom ? (1023 - y2) : y2;
+    } else {
+        self.irX2 = -1; self.irY2 = -1;
+    }
+    
+    // Object 3 (from bytes 5, 6, 7)
+    if (data[5] != 0xFF || data[6] != 0xFF) {
+        uint16_t x3 = data[5] | ((data[7] & 0x30) << 4);
+        uint16_t y3 = data[6] | ((data[7] & 0xC0) << 2);
+        self.irX3 = x3;
+        self.irY3 = self.irBottom ? (1023 - y3) : y3;
+    } else {
+        self.irX3 = -1; self.irY3 = -1;
+    }
+    
+    // Object 4 (from bytes 8, 9, 7)
+    if (data[8] != 0xFF || data[9] != 0xFF) {
+        uint16_t x4 = data[8] | ((data[7] & 0x03) << 8);
+        uint16_t y4 = data[9] | ((data[7] & 0x0C) << 6);
+        self.irX4 = x4;
+        self.irY4 = self.irBottom ? (1023 - y4) : y4;
+    } else {
+        self.irX4 = -1; self.irY4 = -1;
+    }
+}
+
+- (NSString *)buttonString {
+    NSMutableString *str = [NSMutableString string];
+    if (self.btnA) [str appendString:@"A"];
+    if (self.btnB) [str appendString:@"B"];
+    if (self.btn1) [str appendString:@"1"];
+    if (self.btn2) [str appendString:@"2"];
+    if (self.btnPlus) [str appendString:@"+"];
+    if (self.btnMinus) [str appendString:@"-"];
+    if (self.btnHome) [str appendString:@"H"];
+    if (self.btnUp) [str appendString:@"↑"];
+    if (self.btnDown) [str appendString:@"↓"];
+    if (self.btnLeft) [str appendString:@"←"];
+    if (self.btnRight) [str appendString:@"→"];
+    if (str.length == 0) [str appendString:@"-"];
+    return str;
+}
+
+- (void)parseNunchukData:(uint8_t *)decrypted withID:(uint8_t)id andCoreData:(uint8_t *)coreData {
     int rawX = decrypted[0];
     int rawY = decrypted[1];
     
@@ -353,44 +520,77 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     if (!self.calibrated) return;
     
-    // BUTTONS - ALWAYS CHECK (even when idle!)
+    // Parse Wiimote buttons
+    if (coreData) {
+        [self parseWiimoteButtons:coreData];
+    }
+    
+    // Nunchuk buttons
     self.cPressed = ((decrypted[5] & 0x02) == 0);
     self.zPressed = !((decrypted[5] & 0x01) == 0);
     
-    // JOYSTICK - Invert Y
+    // Joystick
     int centeredX = rawX - self.joyXCenter;
-    int centeredY = -(rawY - self.joyYCenter);  // FIX: Invert Y
+    int centeredY = -(rawY - self.joyYCenter);
     
     int deadzone = 15;
-    
-    if (abs(centeredX) < deadzone) {
-        centeredX = 0;
-    }
-    if (abs(centeredY) < deadzone) {
-        centeredY = 0;
-    }
+    if (abs(centeredX) < deadzone) centeredX = 0;
+    if (abs(centeredY) < deadzone) centeredY = 0;
     
     self.joyX = centeredX;
     self.joyY = centeredY;
     
-    // DISPLAY - Always show buttons
+    // Get direction and magnitude
+    NSString *direction = @"IDLE";
+    double magnitude = 0;
+    
     if (centeredX != 0 || centeredY != 0) {
-        char *direction;
+        magnitude = sqrt(centeredX * centeredX + centeredY * centeredY);
         if (abs(centeredX) > abs(centeredY)) {
-            direction = (centeredX > 0) ? "RIGHT" : "LEFT";
+            direction = (centeredX > 0) ? @"RIGHT" : @"LEFT";
         } else {
-            direction = (centeredY > 0) ? "DOWN" : "UP";
+            direction = (centeredY > 0) ? @"DOWN" : @"UP";
         }
-        
-        double magnitude = sqrt(centeredX*centeredX + centeredY*centeredY);
-        printf("\r[DATA 0x%02X] X:%+4d Y:%+4d | Dir: %-8s | Mag: %6.0f | C:%d Z:%d   ",
-               id, centeredX, centeredY, direction, magnitude, self.cPressed, self.zPressed);
-    } else {
-        // Show buttons even when idle
-        printf("\r[DATA 0x%02X] IDLE                          | C:%d Z:%d   ",
-               id, self.cPressed, self.zPressed);
     }
-    fflush(stdout);
+    
+    // Get Wiimote buttons string
+    NSString *buttons = [self buttonString];
+    
+    // Build display string
+    NSMutableString *display = [NSMutableString string];
+    
+    if (self.irEnabled) {
+        // Show with IR
+        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d | IR: ",
+         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
+        
+        int count = 0;
+        if (self.irX1 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX1/4, self.irY1/4]; }
+        if (self.irX2 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX2/4, self.irY2/4]; }
+        if (self.irX3 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX3/4, self.irY3/4]; }
+        if (self.irX4 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX4/4, self.irY4/4]; }
+        if (count == 0) {
+            [display appendString:@"(no dots)"];
+        }
+        [display appendString:@"   "];
+    } else {
+        // Show Nunchuk only
+        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d   ",
+         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
+    }
+    
+    // Only update if display changed
+    if (![display isEqualToString:self.lastDisplay]) {
+        // Clear line and print
+        printf("\r%s", [display UTF8String]);
+        // Pad with spaces to clear any leftover characters
+        int len = (int)strlen([display UTF8String]);
+        if (len < 120) {
+            for (int i = len; i < 120; i++) printf(" ");
+        }
+        fflush(stdout);
+        self.lastDisplay = display;
+    }
 }
 
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
@@ -464,7 +664,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
                 }
             }
             
-            [self parseNunchukData:decrypted withID:id];
+            [self parseNunchukData:decrypted withID:id andCoreData:NULL];
             return;
         }
         
@@ -487,15 +687,26 @@ cat > "src/WiimoteManager.m" << 'EOF'
         int extOffset;
         
         if (id == 0x35) {
-            extOffset = 5;
-        } else {
-            extOffset = 17;
+            extOffset = 5;   // Core(2) + Accel(3) + Ext(16)
+        } else { // 0x37
+            extOffset = 17;  // Core(2) + Accel(3) + IR(10) + Ext(6)
         }
         
         if (len < extOffset + 6) return;
         
+        // Core buttons data (2 bytes at offset 2)
+        uint8_t *coreData = d + 2;
+        
+        // Extension data
         data = d + extOffset;
         
+        // Parse IR data if enabled (0x37 mode)
+        // In 0x37 mode, IR data is 10 bytes starting at offset 5
+        if (self.irEnabled && id == 0x37 && len >= 27) {
+            [self parseIRData:d + 5];
+        }
+        
+        // Decrypt extension data
         int encrypted = 1;
         for (int i = 0; i < 6; i++) {
             if (data[i] != 0x17 && data[i] != 0x00 && data[i] != 0xFF) {
@@ -514,7 +725,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
             }
         }
         
-        [self parseNunchukData:decrypted withID:id];
+        [self parseNunchukData:decrypted withID:id andCoreData:coreData];
     }
 }
 
@@ -681,3 +892,17 @@ cp -R "$APP_BUNDLE" "$HOME/Desktop/" 2>/dev/null || true
 echo -e "${GREEN}✅ Done!${NC}"
 echo -e "${CYAN}📱 Run and look at the RAW data:${NC}"
 echo -e "   $APP_BUNDLE/Contents/MacOS/$APP_NAME"
+echo ""
+echo -e "${YELLOW}📝 Features:${NC}"
+echo -e "   ✅ All Wiimote buttons (A, B, 1, 2, +, -, Home, D-Pad)"
+echo -e "   ✅ Nunchuk (joystick, C, Z)"
+echo -e "   ✅ IR tracking (Basic mode - 4 dots)"
+echo -e "   ✅ IR Bottom orientation (upside-down fix)"
+echo -e "   ✅ Direction display (UP/DOWN/LEFT/RIGHT)"
+echo -e "   ✅ Magnitude display"
+echo -e "   ✅ Auto-calibration for joystick"
+echo -e "   ✅ Battery status"
+echo ""
+echo -e "${CYAN}🔧 To enable RAW IR debug:${NC}"
+echo -e "   Edit WiimoteManager.m and change:"
+echo -e "   ${YELLOW}_debugIR = YES;${NC}"
