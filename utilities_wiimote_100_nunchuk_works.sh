@@ -703,7 +703,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         // Parse IR data if enabled (0x37 mode)
         // In 0x37 mode, IR data is 10 bytes starting at offset 5
         if (self.irEnabled && id == 0x37 && len >= 27) {
-            [self parseIRData:d + 5];
+            [self parseIRData:d + 7];
         }
         
         // Decrypt extension data
