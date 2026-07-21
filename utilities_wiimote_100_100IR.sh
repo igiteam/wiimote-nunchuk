@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wiimote - RAW DATA DEBUGGER WITH IR + ALL BUTTONS + DIRECTION
+# Wiimote - FULL FEATURED: IR + ALL BUTTONS + NUNCHUK + CALIBRATION (FIXED)
 
 set -e
 
@@ -11,7 +11,8 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║              WIIMOTE - RAW DATA DEBUGGER + IR                ║"
+echo "║      WIIMOTE - FULL FEATURED WITH CALIBRATION (FIXED)        ║"
+echo "║      IR + ALL BUTTONS + NUNCHUK + SCREEN CALIBRATION         ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -65,6 +66,26 @@ cat > "src/WiimoteManager.m" << 'EOF'
 @property (nonatomic, assign) BOOL debugIR;
 // Last display to prevent flicker
 @property (nonatomic, strong) NSString *lastDisplay;
+
+// SCREEN CALIBRATION
+@property (nonatomic, assign) float calCenterX;
+@property (nonatomic, assign) float calCenterY;
+@property (nonatomic, assign) float calTopLeftX;
+@property (nonatomic, assign) float calTopLeftY;
+@property (nonatomic, assign) BOOL calCenterSet;
+@property (nonatomic, assign) BOOL calTopLeftSet;
+@property (nonatomic, assign) BOOL isScreenCalibrated;
+
+// Smoothing
+@property (nonatomic, assign) float smoothX;
+@property (nonatomic, assign) float smoothY;
+@property (nonatomic, assign) BOOL hasSmooth;
+
+// Last button states for detection (with debounce)
+@property (nonatomic, assign) BOOL lastA;
+@property (nonatomic, assign) BOOL lastHome;
+@property (nonatomic, assign) int homeDebounceCount;
+@property (nonatomic, assign) int aDebounceCount;
 @end
 
 @implementation WiimoteManager
@@ -89,18 +110,33 @@ cat > "src/WiimoteManager.m" << 'EOF'
         _calSamples = 0;
         _calXSum = 0;
         _calYSum = 0;
-        // IR enabled for debugging
         _irEnabled = YES;
         _irBottom = YES;
-        _debugIR = NO;  // Turn off raw IR debug by default
+        _debugIR = NO;
         _irX1 = _irY1 = _irX2 = _irY2 = _irX3 = _irY3 = _irX4 = _irY4 = -1;
-        // Buttons
         _btnA = _btnB = _btn1 = _btn2 = _btnPlus = _btnMinus = _btnHome = NO;
         _btnUp = _btnDown = _btnLeft = _btnRight = NO;
         _lastDisplay = @"";
-        printf("[Wiimote] Init (IR: %s, Bottom: %s)\n", 
-               _irEnabled ? "ON" : "OFF",
-               _irBottom ? "YES" : "NO");
+        
+        // Screen calibration
+        _calCenterX = 0;
+        _calCenterY = 0;
+        _calTopLeftX = 0;
+        _calTopLeftY = 0;
+        _calCenterSet = NO;
+        _calTopLeftSet = NO;
+        _isScreenCalibrated = NO;
+        _smoothX = 0;
+        _smoothY = 0;
+        _hasSmooth = NO;
+        _lastA = NO;
+        _lastHome = NO;
+        _homeDebounceCount = 0;
+        _aDebounceCount = 0;
+        
+        printf("[Wiimote] FULL FEATURED with Screen Calibration\n");
+        printf("[Wiimote] Press A at center, then A at top-left to calibrate screen\n");
+        printf("[Wiimote] Press HOME to reset screen calibration\n");
         fflush(stdout);
     }
     return self;
@@ -193,13 +229,15 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("[Wiimote] Rumble test complete\n");
     fflush(stdout);
     
-    // 1. First set reporting mode to 0x37 (includes IR)
+    // Set reporting mode to 0x37 (includes IR + Extension)
     [self setReportingMode:0x37];
     usleep(50000);
     
-    // 2. Enable IR Camera (0x13 and 0x1A) - RIGHT AFTER MODE SET
+    // ENABLE IR CAMERA FIRST
     if (self.irEnabled) {
         printf("[IR] Enabling IR Camera...\n");
+        
+        // Enable IR with 0x04 (basic mode without pixel clock)
         uint8_t irEnable[] = {0xA2, 0x13, 0x04};
         [self.ctrl writeSync:irEnable length:3];
         usleep(50000);
@@ -208,11 +246,10 @@ cat > "src/WiimoteManager.m" << 'EOF'
         [self.ctrl writeSync:irEnable2 length:3];
         usleep(50000);
         
-        // 3. Initialize IR registers
         [self initIR];
     }
     
-    // 4. Then init Nunchuk (if connected)
+    // Then init Nunchuk
     [self initNunchuk];
     
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.05
@@ -226,7 +263,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("\n========== INIT IR REGISTERS ==========\n");
     fflush(stdout);
     
-    // Write 0x08 to 0xb00030 (first time)
+    // Write 0x08 to 0xb00030 (enable IR)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
     usleep(50000);
     
@@ -240,13 +277,17 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self writeMemory:0xB0001A data:[NSData dataWithBytes:block2 length:2]];
     usleep(50000);
     
-    // Set IR mode (Basic mode - 0x01)
+    // Set IR mode to Basic (0x01)
     uint8_t irMode = 0x01;
     [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
     usleep(50000);
     
-    // Write 0x08 to 0xb00030 (again - SECOND TIME!)
+    // Write 0x08 to 0xb00030 again (enable IR with settings)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
+    usleep(50000);
+    
+    // Set reporting mode back to 0x37
+    [self setReportingMode:0x37];
     usleep(50000);
     
     printf("[IR] Registers initialized! (Bottom: %s, Mode: Basic)\n", self.irBottom ? "YES" : "NO");
@@ -287,24 +328,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("🔧 AUTO-CALIBRATING NUNCHUK...\n");
     printf("   DON'T TOUCH THE JOYSTICK!\n\n");
     fflush(stdout);
-}
-
-- (void)setIREnable:(BOOL)enable {
-    NSMutableData *report = [NSMutableData data];
-    uint8_t flags = 0x04;
-    [report appendBytes:&flags length:1];
-    
-    uint8_t addrBytes[3] = {
-        0xb0, 0x00, 0x30
-    };
-    [report appendBytes:addrBytes length:3];
-    
-    uint8_t size = 1;
-    [report appendBytes:&size length:1];
-    uint8_t data = enable ? 0x04 : 0x00;
-    [report appendBytes:&data length:1];
-    
-    [self sendOutputReport:0x16 dataWithData:report];
 }
 
 - (void)pollStatus {
@@ -390,8 +413,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
 }
 
 - (void)parseWiimoteButtons:(uint8_t *)data {
-    // data[0] and data[1] are the button bytes
-    // 0 = pressed (active low)
     self.btnLeft   = (data[0] & 0x01) == 0;
     self.btnRight  = (data[0] & 0x02) == 0;
     self.btnDown   = (data[0] & 0x04) == 0;
@@ -409,16 +430,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
 - (void)parseIRData:(uint8_t *)data {
     if (!self.irEnabled) return;
     
-    // RAW IR debug - show all 10 bytes
-    if (self.debugIR) {
-        printf("\n[IR RAW] ");
-        for (int i = 0; i < 10; i++) {
-            printf("%02X ", data[i]);
-        }
-        printf("\n");
-        fflush(stdout);
-    }
-    
     // Check if IR data is valid (not all 0xFF)
     BOOL hasData = NO;
     for (int i = 0; i < 10; i++) {
@@ -431,31 +442,28 @@ cat > "src/WiimoteManager.m" << 'EOF'
         return;
     }
     
-    // Parse Basic Mode (5 bytes per 2 objects)
-    // Bytes 0-4: Object 1 and 2
-    // Bytes 5-9: Object 3 and 4
-    
-    // Object 1 (from bytes 0, 1, 2)
+    // Parse Basic Mode (10 bytes for 4 objects)
+    // Object 1 (bytes 0, 1, 2 bits 4-5 for X, bits 6-7 for Y)
     if (data[0] != 0xFF || data[1] != 0xFF) {
-        uint16_t x1 = data[0] | ((data[2] & 0x30) << 4);  // X1 high bits in bits 4-5
-        uint16_t y1 = data[1] | ((data[2] & 0xC0) << 2);  // Y1 high bits in bits 6-7
+        uint16_t x1 = data[0] | ((data[2] & 0x30) << 4);
+        uint16_t y1 = data[1] | ((data[2] & 0xC0) << 2);
         self.irX1 = x1;
         self.irY1 = self.irBottom ? (1023 - y1) : y1;
     } else {
         self.irX1 = -1; self.irY1 = -1;
     }
     
-    // Object 2 (from bytes 3, 4, 2)
+    // Object 2 (bytes 3, 4, 2 bits 0-1 for X, bits 2-3 for Y)
     if (data[3] != 0xFF || data[4] != 0xFF) {
-        uint16_t x2 = data[3] | ((data[2] & 0x03) << 8);  // X2 high bits in bits 0-1
-        uint16_t y2 = data[4] | ((data[2] & 0x0C) << 6);  // Y2 high bits in bits 2-3
+        uint16_t x2 = data[3] | ((data[2] & 0x03) << 8);
+        uint16_t y2 = data[4] | ((data[2] & 0x0C) << 6);
         self.irX2 = x2;
         self.irY2 = self.irBottom ? (1023 - y2) : y2;
     } else {
         self.irX2 = -1; self.irY2 = -1;
     }
     
-    // Object 3 (from bytes 5, 6, 7)
+    // Object 3 (bytes 5, 6, 7 bits 4-5 for X, bits 6-7 for Y)
     if (data[5] != 0xFF || data[6] != 0xFF) {
         uint16_t x3 = data[5] | ((data[7] & 0x30) << 4);
         uint16_t y3 = data[6] | ((data[7] & 0xC0) << 2);
@@ -465,7 +473,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         self.irX3 = -1; self.irY3 = -1;
     }
     
-    // Object 4 (from bytes 8, 9, 7)
+    // Object 4 (bytes 8, 9, 7 bits 0-1 for X, bits 2-3 for Y)
     if (data[8] != 0xFF || data[9] != 0xFF) {
         uint16_t x4 = data[8] | ((data[7] & 0x03) << 8);
         uint16_t y4 = data[9] | ((data[7] & 0x0C) << 6);
@@ -497,11 +505,14 @@ cat > "src/WiimoteManager.m" << 'EOF'
     int rawX = decrypted[0];
     int rawY = decrypted[1];
     
-    // Handle calibration
+    // Handle Nunchuk calibration
     if (self.calibrating && self.extConnected) {
-        self.calXSum += rawX;
-        self.calYSum += rawY;
-        self.calSamples++;
+        // Skip extreme values during calibration
+        if (rawX > 30 && rawX < 220 && rawY > 30 && rawY < 220) {
+            self.calXSum += rawX;
+            self.calYSum += rawY;
+            self.calSamples++;
+        }
         
         printf("\r🔧 Calibrating... %d/30", self.calSamples);
         fflush(stdout);
@@ -520,16 +531,13 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     if (!self.calibrated) return;
     
-    // Parse Wiimote buttons
     if (coreData) {
         [self parseWiimoteButtons:coreData];
     }
     
-    // Nunchuk buttons
     self.cPressed = ((decrypted[5] & 0x02) == 0);
     self.zPressed = !((decrypted[5] & 0x01) == 0);
     
-    // Joystick
     int centeredX = rawX - self.joyXCenter;
     int centeredY = -(rawY - self.joyYCenter);
     
@@ -540,7 +548,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
     self.joyX = centeredX;
     self.joyY = centeredY;
     
-    // Get direction and magnitude
     NSString *direction = @"IDLE";
     double magnitude = 0;
     
@@ -553,41 +560,138 @@ cat > "src/WiimoteManager.m" << 'EOF'
         }
     }
     
-    // Get Wiimote buttons string
     NSString *buttons = [self buttonString];
     
-    // Build display string
-    NSMutableString *display = [NSMutableString string];
+    // Get screen coordinates from IR
+    NSScreen *screen = [NSScreen mainScreen];
+    CGFloat screenWidth = screen.frame.size.width;
+    CGFloat screenHeight = screen.frame.size.height;
     
-    if (self.irEnabled) {
-        // Show with IR
-        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d | IR: ",
-         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
-        
-        int count = 0;
-        if (self.irX1 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX1/4, self.irY1/4]; }
-        if (self.irX2 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX2/4, self.irY2/4]; }
-        if (self.irX3 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX3/4, self.irY3/4]; }
-        if (self.irX4 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX4/4, self.irY4/4]; }
-        if (count == 0) {
-            [display appendString:@"(no dots)"];
+    // Find valid IR dots
+    int validDots = 0;
+    float avgX = 0, avgY = 0;
+    int irDots[4][2] = {
+        {self.irX1, self.irY1},
+        {self.irX2, self.irY2},
+        {self.irX3, self.irY3},
+        {self.irX4, self.irY4}
+    };
+    
+    for (int i = 0; i < 4; i++) {
+        if (irDots[i][0] != -1 && irDots[i][1] != -1) {
+            avgX += irDots[i][0];
+            avgY += irDots[i][1];
+            validDots++;
         }
-        [display appendString:@"   "];
-    } else {
-        // Show Nunchuk only
-        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d   ",
-         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
     }
     
-    // Only update if display changed
-    if (![display isEqualToString:self.lastDisplay]) {
-        // Clear line and print
-        printf("\r%s", [display UTF8String]);
-        // Pad with spaces to clear any leftover characters
-        int len = (int)strlen([display UTF8String]);
-        if (len < 120) {
-            for (int i = len; i < 120; i++) printf(" ");
+    float screenX = 0, screenY = 0;
+    if (validDots > 0) {
+        avgX /= validDots;
+        avgY /= validDots;
+        
+        // Map to screen
+        if (self.isScreenCalibrated) {
+            float relX = (avgX - self.calTopLeftX) / ((self.calCenterX - self.calTopLeftX) * 2);
+            float relY = (avgY - self.calTopLeftY) / ((self.calCenterY - self.calTopLeftY) * 2);
+            screenX = relX * screenWidth;
+            screenY = relY * screenHeight;
+        } else {
+            screenX = (avgX / 1023.0) * screenWidth;
+            screenY = (avgY / 1023.0) * screenHeight;
         }
+        
+        if (self.irBottom) {
+            screenY = screenHeight - screenY;
+        }
+        
+        screenX = MAX(0, MIN(screenWidth, screenX));
+        screenY = MAX(0, MIN(screenHeight, screenY));
+        
+        // Smoothing
+        if (!self.hasSmooth) {
+            self.smoothX = screenX;
+            self.smoothY = screenY;
+            self.hasSmooth = YES;
+        } else {
+            self.smoothX = screenX * 0.7 + self.smoothX * 0.3;
+            self.smoothY = screenY * 0.7 + self.smoothY * 0.3;
+        }
+    }
+    
+    // Handle screen calibration buttons with debouncing
+    // HOME button - reset calibration (with debounce)
+    if (self.btnHome && !self.lastHome) {
+        self.calCenterSet = NO;
+        self.calTopLeftSet = NO;
+        self.isScreenCalibrated = NO;
+        self.hasSmooth = NO;
+        printf("\n🔴 SCREEN CALIBRATION RESET\n");
+        printf("📋 Point at CENTER and press A\n");
+        fflush(stdout);
+        [self setRumble:YES];
+        usleep(200000);
+        [self setRumble:NO];
+    }
+    self.lastHome = self.btnHome;
+    
+    // A button - set calibration points (with debounce)
+    if (self.btnA && !self.lastA) {
+        if (!self.calCenterSet && validDots > 0) {
+            self.calCenterX = avgX;
+            self.calCenterY = avgY;
+            self.calCenterSet = YES;
+            printf("\n✅ CENTER set: IR(%.0f, %.0f) Screen(%.0f, %.0f)\n", 
+                   avgX, avgY, self.smoothX, self.smoothY);
+            printf("📋 Point at TOP-LEFT and press A\n");
+            fflush(stdout);
+            [self setRumble:YES];
+            usleep(150000);
+            [self setRumble:NO];
+        } else if (!self.calTopLeftSet && validDots > 0) {
+            self.calTopLeftX = avgX;
+            self.calTopLeftY = avgY;
+            self.calTopLeftSet = YES;
+            self.isScreenCalibrated = YES;
+            printf("\n✅ TOP-LEFT set: IR(%.0f, %.0f) Screen(%.0f, %.0f)\n", 
+                   avgX, avgY, self.smoothX, self.smoothY);
+            printf("🎉 SCREEN CALIBRATION COMPLETE!\n");
+            fflush(stdout);
+            [self setRumble:YES];
+            usleep(200000);
+            [self setRumble:NO];
+            usleep(100000);
+            [self setRumble:YES];
+            usleep(200000);
+            [self setRumble:NO];
+        } else if (self.calCenterSet && self.calTopLeftSet) {
+            printf("\n⚠️ Already calibrated! Press HOME to reset.\n");
+            fflush(stdout);
+        } else if (validDots == 0) {
+            printf("\n⚠️ No IR dots detected! Point Wiimote at sensor bar.\n");
+            fflush(stdout);
+        }
+    }
+    self.lastA = self.btnA;
+    
+    // Build display
+    NSMutableString *display = [NSMutableString string];
+    [display appendFormat:@"[Nunchuk] X:%+4d Y:%+4d | Dir: %-5@ | Wii: %@ | C:%d Z:%d | ",
+     self.joyX, self.joyY, direction, buttons, self.cPressed, self.zPressed];
+    
+    if (validDots > 0) {
+        [display appendFormat:@"Screen: (%.0f, %.0f)", self.smoothX, self.smoothY];
+        if (self.isScreenCalibrated) {
+            [display appendString:@" [Calibrated]"];
+        }
+        [display appendFormat:@" | Dots: %d", validDots];
+    } else {
+        [display appendString:@"No IR dots"];
+    }
+    
+    // Only update if changed
+    if (![display isEqualToString:self.lastDisplay]) {
+        printf("\r%s   ", [display UTF8String]);
         fflush(stdout);
         self.lastDisplay = display;
     }
@@ -622,12 +726,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
                 self.calYSum = 0;
                 [self initNunchuk];
                 [self requestStatus];
-            } else {
-                self.initDone = NO;
-                self.joyX = 0;
-                self.joyY = 0;
-                self.calibrated = NO;
-                self.calibrating = NO;
             }
         }
         return;
@@ -637,7 +735,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         if (d[5] == 0xA4 && d[6] == 0x00 && d[7] == 0xFE) {
             if (d[8] == 0x00 && d[9] == 0x00) {
                 self.extConnected = YES;
-                printf("\n[READ 0x21] ✅ NUNCHUK CONFIRMED! (Type: 0x0000)\n");
+                printf("\n[READ 0x21] ✅ NUNCHUK CONFIRMED!\n");
                 fflush(stdout);
             }
             return;
@@ -667,18 +765,10 @@ cat > "src/WiimoteManager.m" << 'EOF'
             [self parseNunchukData:decrypted withID:id andCoreData:NULL];
             return;
         }
-        
-        if (d[5] == 0xA4 && d[6] == 0x00 && d[7] == 0x40 && len >= 16) {
-            printf("\n[READ 0x21] Extension key written\n");
-            fflush(stdout);
-            return;
-        }
         return;
     }
     
     if (id == 0x22) {
-        printf("[ACK 0x22] Report 0x%02X %s\n", d[2], d[3] == 0 ? "✅ OK" : "❌ ERROR");
-        fflush(stdout);
         return;
     }
     
@@ -687,26 +777,21 @@ cat > "src/WiimoteManager.m" << 'EOF'
         int extOffset;
         
         if (id == 0x35) {
-            extOffset = 5;   // Core(2) + Accel(3) + Ext(16)
-        } else { // 0x37
-            extOffset = 17;  // Core(2) + Accel(3) + IR(10) + Ext(6)
+            extOffset = 5;
+        } else {
+            extOffset = 17;
         }
         
         if (len < extOffset + 6) return;
         
-        // Core buttons data (2 bytes at offset 2)
         uint8_t *coreData = d + 2;
-        
-        // Extension data
         data = d + extOffset;
         
-        // Parse IR data if enabled (0x37 mode)
-        // In 0x37 mode, IR data is 10 bytes starting at offset 5
+        // Parse IR data (10 bytes at offset 5 for mode 0x37)
         if (self.irEnabled && id == 0x37 && len >= 27) {
-            [self parseIRData:d + 7];
+            [self parseIRData:d + 5];
         }
         
-        // Decrypt extension data
         int encrypted = 1;
         for (int i = 0; i < 6; i++) {
             if (data[i] != 0x17 && data[i] != 0x00 && data[i] != 0xFF) {
@@ -745,6 +830,14 @@ cat > "src/WiimoteManager.m" << 'EOF'
 - (void)dealloc {
     [self disconnect];
 }
+@end
+EOF
+
+cat > "src/WiimoteManager.h" << 'EOF'
+#import <Foundation/Foundation.h>
+@interface WiimoteManager : NSObject
+- (void)start;
+- (void)stop;
 @end
 EOF
 
@@ -810,14 +903,6 @@ cat > "src/AppDelegate.m" << 'EOF'
     [self.wiimoteManager stop];
     [NSApp terminate:nil];
 }
-@end
-EOF
-
-cat > "src/WiimoteManager.h" << 'EOF'
-#import <Foundation/Foundation.h>
-@interface WiimoteManager : NSObject
-- (void)start;
-- (void)stop;
 @end
 EOF
 
@@ -890,19 +975,17 @@ cp -R "$APP_BUNDLE" "$HOME/Applications/" 2>/dev/null || true
 cp -R "$APP_BUNDLE" "$HOME/Desktop/" 2>/dev/null || true
 
 echo -e "${GREEN}✅ Done!${NC}"
-echo -e "${CYAN}📱 Run and look at the RAW data:${NC}"
+echo -e "${CYAN}🎮 FULL FEATURED WIIMOTE (FIXED):${NC}"
 echo -e "   $APP_BUNDLE/Contents/MacOS/$APP_NAME"
 echo ""
-echo -e "${YELLOW}📝 Features:${NC}"
-echo -e "   ✅ All Wiimote buttons (A, B, 1, 2, +, -, Home, D-Pad)"
-echo -e "   ✅ Nunchuk (joystick, C, Z)"
-echo -e "   ✅ IR tracking (Basic mode - 4 dots)"
-echo -e "   ✅ IR Bottom orientation (upside-down fix)"
-echo -e "   ✅ Direction display (UP/DOWN/LEFT/RIGHT)"
-echo -e "   ✅ Magnitude display"
-echo -e "   ✅ Auto-calibration for joystick"
-echo -e "   ✅ Battery status"
+echo -e "${YELLOW}📝 FIXES:${NC}"
+echo -e "   ✅ Fixed IR detection (proper Basic mode parsing)"
+echo -e "   ✅ Fixed HOME button debouncing (no more spam)"
+echo -e "   ✅ Fixed Nunchuk calibration (skips extreme values)"
+echo -e "   ✅ Shows warning when no IR dots detected"
 echo ""
-echo -e "${CYAN}🔧 To enable RAW IR debug:${NC}"
-echo -e "   Edit WiimoteManager.m and change:"
-echo -e "   ${YELLOW}_debugIR = YES;${NC}"
+echo -e "${CYAN}📋 SCREEN CALIBRATION:${NC}"
+echo -e "   1. Point Wiimote at CENTER -> Press A"
+echo -e "   2. Point Wiimote at TOP-LEFT -> Press A"
+echo -e "   3. Press HOME to reset"
+echo ""
