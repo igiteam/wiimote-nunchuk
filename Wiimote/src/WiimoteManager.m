@@ -1,10 +1,12 @@
 #import "WiimoteManager.h"
 #import <IOBluetooth/IOBluetooth.h>
 #import <AppKit/AppKit.h>
-#import <math.h>
 
 #define PSM_CTRL 0x11
 #define PSM_INTR 0x13
+#define MAX_RETRIES 5
+#define RETRY_DELAY 2.0
+#define INQUIRY_TIMEOUT 8.0
 
 @interface WiimoteManager ()
 @property (nonatomic, strong) IOBluetoothDeviceInquiry *inquiry;
@@ -13,33 +15,19 @@
 @property (nonatomic, strong) IOBluetoothL2CAPChannel *intr;
 @property (nonatomic, assign) BOOL running;
 @property (nonatomic, assign) BOOL connecting;
+@property (nonatomic, assign) BOOL connected;
 @property (nonatomic, strong) NSTimer *timer;
-@property (nonatomic, assign) int battery;
-@property (nonatomic, assign) int batteryRaw;
-@property (nonatomic, assign) int statusCount;
-@property (nonatomic, assign) int lf;
-@property (nonatomic, assign) BOOL extConnected;
-@property (nonatomic, assign) int joyX, joyY;
-@property (nonatomic, assign) BOOL cPressed, zPressed;
-@property (nonatomic, assign) BOOL initDone;
-@property (nonatomic, assign) int joyXCenter;
-@property (nonatomic, assign) int joyYCenter;
-@property (nonatomic, assign) BOOL calibrated;
-@property (nonatomic, assign) int calSamples;
-@property (nonatomic, assign) int calXSum;
-@property (nonatomic, assign) int calYSum;
-@property (nonatomic, assign) BOOL calibrating;
-// IR properties
-@property (nonatomic, assign) BOOL irEnabled;
 @property (nonatomic, assign) BOOL irBottom;
-@property (nonatomic, assign) int irX1, irY1, irX2, irY2, irX3, irY3, irX4, irY4;
-// Wiimote buttons
-@property (nonatomic, assign) BOOL btnA, btnB, btn1, btn2, btnPlus, btnMinus, btnHome;
-@property (nonatomic, assign) BOOL btnUp, btnDown, btnLeft, btnRight;
-// RAW IR debug
 @property (nonatomic, assign) BOOL debugIR;
-// Last display to prevent flicker
-@property (nonatomic, strong) NSString *lastDisplay;
+@property (nonatomic, assign) int sensitivityLevel;
+@property (nonatomic, assign) int frameCount;
+@property (nonatomic, assign) int batteryPercent;
+@property (nonatomic, assign) BOOL statusHeaderShown;
+@property (nonatomic, assign) int retryCount;
+@property (nonatomic, strong) NSTimer *retryTimer;
+@property (nonatomic, strong) NSTimer *inquiryTimer;
+@property (nonatomic, assign) BOOL inquiryActive;
+@property (nonatomic, assign) BOOL reconnecting;
 @end
 
 @implementation WiimoteManager
@@ -49,33 +37,19 @@
     if (self) {
         _running = NO;
         _connecting = NO;
-        _battery = 0;
-        _batteryRaw = 0;
-        _statusCount = 0;
-        _lf = 0;
-        _extConnected = NO;
-        _joyX = _joyY = 0;
-        _cPressed = _zPressed = NO;
-        _initDone = NO;
-        _calibrated = NO;
-        _calibrating = NO;
-        _joyXCenter = 128;
-        _joyYCenter = 128;
-        _calSamples = 0;
-        _calXSum = 0;
-        _calYSum = 0;
-        // IR enabled for debugging
-        _irEnabled = YES;
+        _connected = NO;
+        _reconnecting = NO;
         _irBottom = YES;
-        _debugIR = NO;  // Turn off raw IR debug by default
-        _irX1 = _irY1 = _irX2 = _irY2 = _irX3 = _irY3 = _irX4 = _irY4 = -1;
-        // Buttons
-        _btnA = _btnB = _btn1 = _btn2 = _btnPlus = _btnMinus = _btnHome = NO;
-        _btnUp = _btnDown = _btnLeft = _btnRight = NO;
-        _lastDisplay = @"";
-        printf("[Wiimote] Init (IR: %s, Bottom: %s)\n", 
-               _irEnabled ? "ON" : "OFF",
-               _irBottom ? "YES" : "NO");
+        _debugIR = YES;
+        _sensitivityLevel = 3;
+        _frameCount = 0;
+        _batteryPercent = 0;
+        _statusHeaderShown = NO;
+        _retryCount = 0;
+        _retryTimer = nil;
+        _inquiryTimer = nil;
+        _inquiryActive = NO;
+        printf("[Wiimote] IR Debugger Init\n");
         fflush(stdout);
     }
     return self;
@@ -84,27 +58,121 @@
 - (void)start {
     if (self.running) return;
     self.running = YES;
+    self.reconnecting = NO;
     printf("[Wiimote] Starting...\n");
     fflush(stdout);
-    [self startDiscovery];
+    
+    // Clean up any stale connections first
+    [self cleanupStaleConnections];
+    
+    [self startDiscoveryWithRetry:NO];
+}
+
+- (void)cleanupStaleConnections {
+    NSArray *devices = [IOBluetoothDevice pairedDevices];
+    for (IOBluetoothDevice *dev in devices) {
+        NSString *name = dev.name;
+        if ([name containsString:@"Nintendo"] || [name containsString:@"RVL"]) {
+            printf("[Wiimote] Found stale device: %s\n", [name UTF8String]);
+            fflush(stdout);
+            
+            if (dev.isConnected) {
+                printf("[Wiimote] Disconnecting...\n");
+                fflush(stdout);
+                [dev closeConnection];
+                usleep(500000);
+            }
+            
+            // Try to remove pairing if available
+            if ([dev respondsToSelector:@selector(removePairing)]) {
+                printf("[Wiimote] Removing pairing...\n");
+                fflush(stdout);
+                [dev performSelector:@selector(removePairing)];
+                usleep(500000);
+            }
+        }
+    }
 }
 
 - (void)stop {
     self.running = NO;
+    self.reconnecting = NO;
     [self.timer invalidate];
     self.timer = nil;
+    [self.retryTimer invalidate];
+    self.retryTimer = nil;
+    [self.inquiryTimer invalidate];
+    self.inquiryTimer = nil;
+    self.inquiryActive = NO;
     [self disconnect];
-    printf("\n[Wiimote] Stopped\n");
+    printf("[Wiimote] Stopped\n");
     fflush(stdout);
 }
 
-- (void)startDiscovery {
+- (void)startDiscoveryWithRetry:(BOOL)isRetry {
+    if (!self.running) return;
+    if (self.connected) return;
+    
+    if (isRetry) {
+        self.retryCount++;
+        if (self.retryCount > MAX_RETRIES) {
+            printf("[Wiimote] Max retries reached.\n");
+            printf("[Wiimote] Press the red Sync button on the back of the Wiimote.\n");
+            printf("[Wiimote] Or restart the app.\n");
+            fflush(stdout);
+            return;
+        }
+        printf("[Wiimote] Retry %d/%d in %.1f seconds...\n", 
+               self.retryCount, MAX_RETRIES, RETRY_DELAY);
+        fflush(stdout);
+        
+        self.retryTimer = [NSTimer scheduledTimerWithTimeInterval:RETRY_DELAY
+                                                           target:self
+                                                         selector:@selector(doDiscovery)
+                                                         userInfo:nil
+                                                          repeats:NO];
+        return;
+    }
+    
+    [self doDiscovery];
+}
+
+- (void)doDiscovery {
+    if (!self.running) return;
+    if (self.inquiryActive) return;
+    if (self.connected) return;
+    
+    self.inquiryActive = YES;
     self.inquiry = [IOBluetoothDeviceInquiry inquiryWithDelegate:self];
     self.inquiry.inquiryLength = 10;
     self.inquiry.updateNewDeviceNames = YES;
-    [self.inquiry start];
-    printf("[Wiimote] Press 1+2\n");
+    
+    printf("[Wiimote] Press 1+2 on the Wiimote\n");
     fflush(stdout);
+    
+    [self.inquiry start];
+    
+    [self.inquiryTimer invalidate];
+    self.inquiryTimer = [NSTimer scheduledTimerWithTimeInterval:INQUIRY_TIMEOUT
+                                                         target:self
+                                                       selector:@selector(inquiryTimeout)
+                                                       userInfo:nil
+                                                        repeats:NO];
+}
+
+- (void)inquiryTimeout {
+    if (!self.running) return;
+    if (!self.inquiryActive) return;
+    if (self.connected) return;
+    
+    printf("[Wiimote] Inquiry timeout - no devices found.\n");
+    fflush(stdout);
+    
+    [self.inquiry stop];
+    self.inquiry = nil;
+    self.inquiryActive = NO;
+    
+    [self startDiscoveryWithRetry:YES];
 }
 
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry *)sender device:(IOBluetoothDevice *)device {
@@ -112,17 +180,59 @@
     if ([name containsString:@"Nintendo"] || [name containsString:@"RVL"]) {
         printf("[Wiimote] Found: %s\n", [name UTF8String]);
         fflush(stdout);
+        
+        [self.inquiryTimer invalidate];
+        self.inquiryTimer = nil;
+        self.inquiryActive = NO;
+        
         [sender stop];
+        self.inquiry = nil;
+        
+        if (device.isConnected) {
+            printf("[Wiimote] Device already connected, disconnecting...\n");
+            fflush(stdout);
+            [device closeConnection];
+            usleep(500000);
+        }
+        
         [self connectTo:device];
+    }
+}
+
+- (void)deviceInquiryComplete:(IOBluetoothDeviceInquiry *)sender error:(IOReturn)error {
+    self.inquiryActive = NO;
+    [self.inquiryTimer invalidate];
+    self.inquiryTimer = nil;
+    self.inquiry = nil;
+    
+    if (error == kIOReturnSuccess && !self.connected) {
+        printf("[Wiimote] No devices found.\n");
+        fflush(stdout);
+        [self startDiscoveryWithRetry:YES];
     }
 }
 
 - (void)connectTo:(IOBluetoothDevice *)device {
     if (self.connecting) return;
+    if (self.connected) return;
     self.connecting = YES;
     self.device = device;
     printf("[Wiimote] Connecting...\n");
     fflush(stdout);
+    
+    self.retryCount = 0;
+    [self.retryTimer invalidate];
+    self.retryTimer = nil;
+    
+    if (device.isConnected) {
+        printf("[Wiimote] Device already connected, disconnecting first...\n");
+        fflush(stdout);
+        [device closeConnection];
+        usleep(500000);
+    }
+    
+    // Use a slightly different approach - try to open the channels with a small delay
+    usleep(200000);
     
     IOBluetoothL2CAPChannel *c = nil;
     IOReturn r = [device openL2CAPChannelSync:&c withPSM:PSM_CTRL delegate:self];
@@ -142,22 +252,37 @@
             printf("[Wiimote] Interrupt opened!\n");
             fflush(stdout);
             self.connecting = NO;
+            self.connected = YES;
+            self.reconnecting = NO;
             [self onConnected];
         } else {
             printf("[Wiimote] Interrupt failed: %d\n", r);
             fflush(stdout);
             self.connecting = NO;
+            [self connectionFailed];
         }
     } else {
         printf("[Wiimote] Control failed: %d\n", r);
         fflush(stdout);
         self.connecting = NO;
+        [self connectionFailed];
     }
+}
+
+- (void)connectionFailed {
+    self.connected = NO;
+    [self disconnect];
+    usleep(500000);
+    [self startDiscoveryWithRetry:YES];
 }
 
 - (void)onConnected {
     printf("[Wiimote] CONNECTED!\n");
     fflush(stdout);
+    
+    self.retryCount = 0;
+    [self.retryTimer invalidate];
+    self.retryTimer = nil;
     
     [self setLED:0x10];
     usleep(50000);
@@ -168,133 +293,116 @@
     printf("[Wiimote] Rumble test complete\n");
     fflush(stdout);
     
-    // 1. First set reporting mode to 0x37 (includes IR)
-    [self setReportingMode:0x37];
+    [self setReportingMode:0x33];
     usleep(50000);
     
-    // 2. Enable IR Camera (0x13 and 0x1A) - RIGHT AFTER MODE SET
-    if (self.irEnabled) {
-        printf("[IR] Enabling IR Camera...\n");
-        uint8_t irEnable[] = {0xA2, 0x13, 0x04};
-        [self.ctrl writeSync:irEnable length:3];
-        usleep(50000);
-        
-        uint8_t irEnable2[] = {0xA2, 0x1A, 0x04};
-        [self.ctrl writeSync:irEnable2 length:3];
-        usleep(50000);
-        
-        // 3. Initialize IR registers
-        [self initIR];
-    }
-    
-    // 4. Then init Nunchuk (if connected)
-    [self initNunchuk];
+    [self initIRWithRetry:0];
     
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                                    target:self
-                                                 selector:@selector(pollStatus)
+                                                 selector:@selector(pollIR)
                                                  userInfo:nil
                                                   repeats:YES];
 }
 
+- (void)showStatusHeader {
+    if (self.statusHeaderShown) return;
+    self.statusHeaderShown = YES;
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║  IR DEBUGGER STATUS                                        ║\n");
+    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("║  IR Enabled:   YES                                         ║\n");
+    printf("║  IR Mode:      Basic (0x01)                                ║\n");
+    printf("║  IR Bottom:    %-3s                                          ║\n", self.irBottom ? "YES" : "NO");
+    printf("║  Sensitivity:  Level %d                                     ║\n", self.sensitivityLevel);
+    printf("║  Debug Output: %-3s                                          ║\n", self.debugIR ? "YES" : "NO");
+    printf("║  Battery:      %d%%                                         ║\n", self.batteryPercent);
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    fflush(stdout);
+}
+
 - (void)initIR {
-    printf("\n========== INIT IR REGISTERS ==========\n");
+    printf("\n========== INIT IR ==========\n");
     fflush(stdout);
     
-    // Write 0x08 to 0xb00030 (first time)
-    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
+    // STEP 1: Enable IR with 0x06 (both pixel clock and enable)
+    uint8_t irEnable[] = {0xA2, 0x13, 0x06};
+    [self.ctrl writeSync:irEnable length:3];
     usleep(50000);
     
-    // Write sensitivity block (Level 3)
-    uint8_t block1[] = {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64};
-    uint8_t block2[] = {0x63, 0x03};
+    // STEP 2: Enable IR 2 with 0x06
+    uint8_t irEnable2[] = {0xA2, 0x1A, 0x06};
+    [self.ctrl writeSync:irEnable2 length:3];
+    usleep(50000);
     
+    // STEP 3: Write 0x01 to 0xB00030 (enable IR sensor)
+    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x01" length:1]];
+    usleep(50000);
+    
+    // STEP 4: Write sensitivity blocks (using Level 3 which is standard)
+    // Block 1: 9 bytes at 0xB00000
+    uint8_t block1[] = {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64};
     [self writeMemory:0xB00000 data:[NSData dataWithBytes:block1 length:9]];
     usleep(50000);
     
+    // Block 2: 2 bytes at 0xB0001A
+    uint8_t block2[] = {0x63, 0x03};
     [self writeMemory:0xB0001A data:[NSData dataWithBytes:block2 length:2]];
     usleep(50000);
     
-    // Set IR mode (Basic mode - 0x01)
-    uint8_t irMode = 0x01;
+    // STEP 5: Write IR mode (0x03 for Extended Mode - needed for 12 bytes)
+    uint8_t irMode = 0x03;  // 0x01 = Basic (10 bytes), 0x03 = Extended (12 bytes)
     [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
     usleep(50000);
     
-    // Write 0x08 to 0xb00030 (again - SECOND TIME!)
+    // STEP 6: Write 0x08 to 0xB00030 (enable IR with 8-bit mode)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
     usleep(50000);
     
-    printf("[IR] Registers initialized! (Bottom: %s, Mode: Basic)\n", self.irBottom ? "YES" : "NO");
-    printf("==================================\n\n");
-    fflush(stdout);
-}
-
-- (void)initNunchuk {
-    printf("\n========== INIT NUNCHUK ==========\n");
-    fflush(stdout);
-    
-    [self writeMemory:0xA40040 data:[NSData dataWithBytes:"\x00" length:1]];
+    // STEP 7: Set reporting mode to 0x33
+    [self setReportingMode:0x33];
     usleep(50000);
     
-    uint8_t key[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    [self writeMemory:0xA40040 data:[NSData dataWithBytes:key length:16]];
-    usleep(50000);
-    
-    [self writeMemory:0xA400F0 data:[NSData dataWithBytes:"\x55" length:1]];
-    usleep(50000);
-    
-    [self setReportingMode:0x37];
-    usleep(50000);
-    
-    [self requestStatus];
-    
-    self.initDone = YES;
-    printf("[INIT] Nunchuk init complete\n");
+    printf("[IR] Enabled (Bottom: %s, Mode: Extended (0x03), Sens: Level 3)\n", 
+           self.irBottom ? "YES" : "NO");
     printf("==================================\n\n");
     fflush(stdout);
     
-    // Start calibration
-    self.calibrated = NO;
-    self.calibrating = YES;
-    self.calSamples = 0;
-    self.calXSum = 0;
-    self.calYSum = 0;
-    printf("🔧 AUTO-CALIBRATING NUNCHUK...\n");
-    printf("   DON'T TOUCH THE JOYSTICK!\n\n");
-    fflush(stdout);
+    [self showStatusHeader];
 }
 
-- (void)setIREnable:(BOOL)enable {
-    NSMutableData *report = [NSMutableData data];
-    uint8_t flags = 0x04;
-    [report appendBytes:&flags length:1];
-    
-    uint8_t addrBytes[3] = {
-        0xb0, 0x00, 0x30
-    };
-    [report appendBytes:addrBytes length:3];
-    
-    uint8_t size = 1;
-    [report appendBytes:&size length:1];
-    uint8_t data = enable ? 0x04 : 0x00;
-    [report appendBytes:&data length:1];
-    
-    [self sendOutputReport:0x16 dataWithData:report];
-}
-
-- (void)pollStatus {
-    [self readMemory:0xA40008 size:6];
-    self.statusCount++;
-    if (self.statusCount % 10 == 0) {
-        [self requestStatus];
+- (void)pollIR {
+    if (!self.connected) {
+        [self reconnect];
+        return;
     }
+    [self requestStatus];
+}
+
+- (void)reconnect {
+    if (self.reconnecting) return;
+    if (self.connected) return;
+    self.reconnecting = YES;
+    
+    printf("[Wiimote] Reconnecting...\n");
+    fflush(stdout);
+    
+    [self disconnect];
+    self.retryCount = 0;
+    [self startDiscoveryWithRetry:NO];
 }
 
 - (void)writeMemory:(uint32_t)address data:(NSData *)data {
-    if (!self.ctrl || data.length > 16) return;
+    if (!self.ctrl) return;
+    if (data.length > 16) return;
     
     NSMutableData *report = [NSMutableData data];
-    uint8_t flags = 0x04;
+    
+    // For register writes (address >= 0xA00000), we need 0x04
+    // For EEPROM writes (address < 0xA00000), we need 0x00
+    uint8_t flags = 0x04;  // Always use 0x04 for registers
     [report appendBytes:&flags length:1];
     
     uint8_t addrBytes[3] = {
@@ -304,30 +412,18 @@
     };
     [report appendBytes:addrBytes length:3];
     
-    uint8_t size = data.length;
+    uint8_t size = data.length & 0x0F;
     [report appendBytes:&size length:1];
     [report appendData:data];
     
+    // Pad to 16 bytes
+    NSUInteger padding = 16 - data.length;
+    for (int i = 0; i < padding; i++) {
+        uint8_t zero = 0x00;
+        [report appendBytes:&zero length:1];
+    }
+    
     [self sendOutputReport:0x16 dataWithData:report];
-}
-
-- (void)readMemory:(uint32_t)address size:(uint16_t)size {
-    if (!self.ctrl) return;
-    
-    NSMutableData *report = [NSMutableData data];
-    uint8_t space = 0x04;
-    [report appendBytes:&space length:1];
-    
-    uint8_t slaveAddr = 0x00;
-    [report appendBytes:&slaveAddr length:1];
-    
-    uint8_t addrBytes[2] = { (address >> 8) & 0xFF, address & 0xFF };
-    [report appendBytes:addrBytes length:2];
-    
-    uint8_t sizeBytes[2] = { (size >> 8) & 0xFF, size & 0xFF };
-    [report appendBytes:sizeBytes length:2];
-    
-    [self sendOutputReport:0x17 dataWithData:report];
 }
 
 - (void)sendOutputReport:(uint8_t)reportID dataWithData:(NSData *)data {
@@ -339,6 +435,13 @@
     [report appendBytes:&reportID length:1];
     [report appendData:data];
     
+    // Pad to proper length if needed
+    NSUInteger totalLen = report.length;
+    if (totalLen < 21) {
+        uint8_t padding[21] = {0};
+        [report appendBytes:padding length:21 - totalLen];
+    }
+    
     [self.ctrl writeSync:(void *)report.bytes length:report.length];
 }
 
@@ -348,224 +451,126 @@
 }
 
 - (void)setReportingMode:(uint8_t)mode {
+    if (!self.ctrl) return;
     uint8_t report[] = {0xA2, 0x12, 0x04, mode};
     [self.ctrl writeSync:report length:4];
-    printf("[Wiimote] Mode: 0x%02X\n", mode);
+}
+
+
+- (void)initIRWithRetry:(int)retryCount {
+    if (retryCount > 3) {
+        printf("[IR] Failed to initialize after 3 attempts\n");
+        fflush(stdout);
+        return;
+    }
+    
+    printf("[IR] Init attempt %d\n", retryCount + 1);
     fflush(stdout);
+    
+    [self initIR];
+    
+    // Wait for data to come through
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // Check if we're getting IR data with dots
+        if (self.frameCount < 5) {
+            printf("[IR] No data received, retrying...\n");
+            fflush(stdout);
+            [self initIRWithRetry:retryCount + 1];
+        } else {
+            printf("[IR] Initialized successfully!\n");
+            fflush(stdout);
+        }
+    });
 }
 
 - (void)requestStatus {
+    if (!self.ctrl) return;
     uint8_t status[] = {0xA2, 0x15, 0x00};
     [self.ctrl writeSync:status length:3];
 }
 
 - (void)setRumble:(BOOL)enable {
+    if (!self.ctrl) return;
     uint8_t rumble[] = {0xA2, 0x10, enable ? 0x01 : 0x00};
     [self.ctrl writeSync:rumble length:3];
 }
 
-- (void)parseWiimoteButtons:(uint8_t *)data {
-    // data[0] and data[1] are the button bytes
-    // 0 = pressed (active low)
-    self.btnLeft   = (data[0] & 0x01) == 0;
-    self.btnRight  = (data[0] & 0x02) == 0;
-    self.btnDown   = (data[0] & 0x04) == 0;
-    self.btnUp     = (data[0] & 0x08) == 0;
-    self.btnPlus   = (data[0] & 0x10) == 0;
-    
-    self.btn2      = (data[1] & 0x01) == 0;
-    self.btn1      = (data[1] & 0x02) == 0;
-    self.btnB      = (data[1] & 0x04) == 0;
-    self.btnA      = (data[1] & 0x08) == 0;
-    self.btnMinus  = (data[1] & 0x10) == 0;
-    self.btnHome   = (data[1] & 0x80) == 0;
-}
-
 - (void)parseIRData:(uint8_t *)data {
-    if (!self.irEnabled) return;
+    self.frameCount++;
     
-    // RAW IR debug - show all 10 bytes
-    if (self.debugIR) {
-        printf("\n[IR RAW] ");
-        for (int i = 0; i < 10; i++) {
-            printf("%02X ", data[i]);
-        }
-        printf("\n");
-        fflush(stdout);
+    if (self.frameCount % 5 != 0) return;
+    
+    // In report mode 0x33:
+    // data[0-1] = Buttons
+    // data[2-4] = Accelerometer
+    // data[5-16] = IR data (12 bytes)
+    
+    uint16_t buttons = (data[1] << 8) | data[0];
+    
+    printf("[RAW IR] ");
+    for (int i = 0; i < 12; i++) {
+        printf("%02X ", data[i]);
     }
+    printf("| \n");
     
-    // Check if IR data is valid (not all 0xFF)
+    // Extract IR data starting at offset 5
+    uint8_t *irData = data + 5;
+    
+    printf("  Buttons: 0x%04X\n", buttons);
+    printf("  Accel: %02X %02X %02X\n", data[2], data[3], data[4]);
+    printf("  IR Bytes: ");
+    for (int i = 0; i < 12; i++) {
+        printf("[%d]=%02X ", i, irData[i]);
+    }
+    printf("\n");
+    
+    // Check if we have any IR data
     BOOL hasData = NO;
-    for (int i = 0; i < 10; i++) {
-        if (data[i] != 0xFF) { hasData = YES; break; }
+    for (int i = 0; i < 12; i++) {
+        if (irData[i] != 0xFF) { hasData = YES; break; }
     }
     
     if (!hasData) {
-        self.irX1 = self.irX2 = self.irX3 = self.irX4 = -1;
-        self.irY1 = self.irY2 = self.irY3 = self.irY4 = -1;
+        printf("  NO IR DATA DETECTED\n");
+        fflush(stdout);
         return;
     }
     
-    // Parse Basic Mode (5 bytes per 2 objects)
-    // Bytes 0-4: Object 1 and 2
-    // Bytes 5-9: Object 3 and 4
+    printf("  IR Format: Extended Mode (12 bytes)\n");
+    printf("  Dot1: X,Y,Size | Dot2: X,Y,Size | Dot3: X,Y,Size | Dot4: X,Y,Size\n");
     
-    // Object 1 (from bytes 0, 1, 2)
-    if (data[0] != 0xFF || data[1] != 0xFF) {
-        uint16_t x1 = data[0] | ((data[2] & 0x30) << 4);  // X1 high bits in bits 4-5
-        uint16_t y1 = data[1] | ((data[2] & 0xC0) << 2);  // Y1 high bits in bits 6-7
-        self.irX1 = x1;
-        self.irY1 = self.irBottom ? (1023 - y1) : y1;
-    } else {
-        self.irX1 = -1; self.irY1 = -1;
-    }
+    int dotCount = 0;
     
-    // Object 2 (from bytes 3, 4, 2)
-    if (data[3] != 0xFF || data[4] != 0xFF) {
-        uint16_t x2 = data[3] | ((data[2] & 0x03) << 8);  // X2 high bits in bits 0-1
-        uint16_t y2 = data[4] | ((data[2] & 0x0C) << 6);  // Y2 high bits in bits 2-3
-        self.irX2 = x2;
-        self.irY2 = self.irBottom ? (1023 - y2) : y2;
-    } else {
-        self.irX2 = -1; self.irY2 = -1;
-    }
-    
-    // Object 3 (from bytes 5, 6, 7)
-    if (data[5] != 0xFF || data[6] != 0xFF) {
-        uint16_t x3 = data[5] | ((data[7] & 0x30) << 4);
-        uint16_t y3 = data[6] | ((data[7] & 0xC0) << 2);
-        self.irX3 = x3;
-        self.irY3 = self.irBottom ? (1023 - y3) : y3;
-    } else {
-        self.irX3 = -1; self.irY3 = -1;
-    }
-    
-    // Object 4 (from bytes 8, 9, 7)
-    if (data[8] != 0xFF || data[9] != 0xFF) {
-        uint16_t x4 = data[8] | ((data[7] & 0x03) << 8);
-        uint16_t y4 = data[9] | ((data[7] & 0x0C) << 6);
-        self.irX4 = x4;
-        self.irY4 = self.irBottom ? (1023 - y4) : y4;
-    } else {
-        self.irX4 = -1; self.irY4 = -1;
-    }
-}
-
-- (NSString *)buttonString {
-    NSMutableString *str = [NSMutableString string];
-    if (self.btnA) [str appendString:@"A"];
-    if (self.btnB) [str appendString:@"B"];
-    if (self.btn1) [str appendString:@"1"];
-    if (self.btn2) [str appendString:@"2"];
-    if (self.btnPlus) [str appendString:@"+"];
-    if (self.btnMinus) [str appendString:@"-"];
-    if (self.btnHome) [str appendString:@"H"];
-    if (self.btnUp) [str appendString:@"↑"];
-    if (self.btnDown) [str appendString:@"↓"];
-    if (self.btnLeft) [str appendString:@"←"];
-    if (self.btnRight) [str appendString:@"→"];
-    if (str.length == 0) [str appendString:@"-"];
-    return str;
-}
-
-- (void)parseNunchukData:(uint8_t *)decrypted withID:(uint8_t)id andCoreData:(uint8_t *)coreData {
-    int rawX = decrypted[0];
-    int rawY = decrypted[1];
-    
-    // Handle calibration
-    if (self.calibrating && self.extConnected) {
-        self.calXSum += rawX;
-        self.calYSum += rawY;
-        self.calSamples++;
+    // Parse 4 dots, each with 3 bytes (X, Y, Size)
+    for (int dot = 0; dot < 4; dot++) {
+        int offset = dot * 3;
+        uint8_t xLow = irData[offset];
+        uint8_t yLow = irData[offset + 1];
+        uint8_t high = irData[offset + 2];
         
-        printf("\r🔧 Calibrating... %d/30", self.calSamples);
-        fflush(stdout);
+        // Skip if this dot is empty (all 0xFF)
+        if (xLow == 0xFF && yLow == 0xFF && high == 0xFF) {
+            continue;
+        }
         
-        if (self.calSamples >= 30) {
-            self.joyXCenter = self.calXSum / 30;
-            self.joyYCenter = self.calYSum / 30;
-            self.calibrated = YES;
-            self.calibrating = NO;
-            printf("\n✅ Calibration complete!\n");
-            printf("   X Center: %d  Y Center: %d\n\n", self.joyXCenter, self.joyYCenter);
-            fflush(stdout);
-        }
-        return;
-    }
-    
-    if (!self.calibrated) return;
-    
-    // Parse Wiimote buttons
-    if (coreData) {
-        [self parseWiimoteButtons:coreData];
-    }
-    
-    // Nunchuk buttons
-    self.cPressed = ((decrypted[5] & 0x02) == 0);
-    self.zPressed = !((decrypted[5] & 0x01) == 0);
-    
-    // Joystick
-    int centeredX = rawX - self.joyXCenter;
-    int centeredY = -(rawY - self.joyYCenter);
-    
-    int deadzone = 15;
-    if (abs(centeredX) < deadzone) centeredX = 0;
-    if (abs(centeredY) < deadzone) centeredY = 0;
-    
-    self.joyX = centeredX;
-    self.joyY = centeredY;
-    
-    // Get direction and magnitude
-    NSString *direction = @"IDLE";
-    double magnitude = 0;
-    
-    if (centeredX != 0 || centeredY != 0) {
-        magnitude = sqrt(centeredX * centeredX + centeredY * centeredY);
-        if (abs(centeredX) > abs(centeredY)) {
-            direction = (centeredX > 0) ? @"RIGHT" : @"LEFT";
-        } else {
-            direction = (centeredY > 0) ? @"DOWN" : @"UP";
-        }
-    }
-    
-    // Get Wiimote buttons string
-    NSString *buttons = [self buttonString];
-    
-    // Build display string
-    NSMutableString *display = [NSMutableString string];
-    
-    if (self.irEnabled) {
-        // Show with IR
-        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d | IR: ",
-         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
+        // Extract 10-bit X and Y values
+        uint16_t x = xLow | ((high & 0x03) << 8);
+        uint16_t y = yLow | ((high & 0x0C) << 6);
+        uint8_t size = (high & 0xF0) >> 4;
         
-        int count = 0;
-        if (self.irX1 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX1/4, self.irY1/4]; }
-        if (self.irX2 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX2/4, self.irY2/4]; }
-        if (self.irX3 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX3/4, self.irY3/4]; }
-        if (self.irX4 != -1) { count++; [display appendFormat:@"●(%3d,%3d) ", self.irX4/4, self.irY4/4]; }
-        if (count == 0) {
-            [display appendString:@"(no dots)"];
+        printf("  Dot%d: X=%04d (0x%04X), Y=%04d (0x%04X), Size=%d", 
+               dot + 1, x, x, y, y, size);
+        
+        if (self.irBottom) {
+            y = 1023 - y;
+            printf(" (flipped Y to %04d)", y);
         }
-        [display appendString:@"   "];
-    } else {
-        // Show Nunchuk only
-        [display appendFormat:@"[Data] X:%+4d Y:%+4d | Dir: %-8@ | Mag: %6.0f | Wii: %@ | C:%d Z:%d   ",
-         self.joyX, self.joyY, direction, magnitude, buttons, self.cPressed, self.zPressed];
+        printf("\n");
+        dotCount++;
     }
     
-    // Only update if display changed
-    if (![display isEqualToString:self.lastDisplay]) {
-        // Clear line and print
-        printf("\r%s", [display UTF8String]);
-        // Pad with spaces to clear any leftover characters
-        int len = (int)strlen([display UTF8String]);
-        if (len < 120) {
-            for (int i = len; i < 120; i++) printf(" ");
-        }
-        fflush(stdout);
-        self.lastDisplay = display;
-    }
+    printf("  Total dots detected: %d\n", dotCount);
+    fflush(stdout);
 }
 
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
@@ -575,146 +580,54 @@
     
     uint8_t id = d[1];
     
-    if (id == 0x20 && len >= 8) {
-        self.lf = d[4];
-        self.batteryRaw = d[7];
-        self.battery = (self.batteryRaw * 100) / 0xC0;
-        self.statusCount++;
-        
-        BOOL extConnected = (self.lf & 0x02) != 0;
-        if (extConnected != self.extConnected) {
-            self.extConnected = extConnected;
-            printf("\n[STATUS] NUNCHUK %s (LF:0x%02X, Battery:%d%%)\n", 
-                   extConnected ? "CONNECTED" : "DISCONNECTED", self.lf, self.battery);
-            fflush(stdout);
+    if (id == 0x33 && len >= 17) {
+        // Parse ALL data as IR - ignore extension
+        [self parseIRData:d + 5];
+    } else if (id == 0x20) {
+        if (len >= 8) {
+            self.batteryPercent = (d[7] * 100) / 0xC0;
+            
+            // Check if extension is connected
+            BOOL extConnected = (d[4] & 0x02) != 0;
             
             if (extConnected) {
-                self.initDone = NO;
-                self.calibrated = NO;
-                self.calibrating = YES;
-                self.calSamples = 0;
-                self.calXSum = 0;
-                self.calYSum = 0;
-                [self initNunchuk];
-                [self requestStatus];
-            } else {
-                self.initDone = NO;
-                self.joyX = 0;
-                self.joyY = 0;
-                self.calibrated = NO;
-                self.calibrating = NO;
-            }
-        }
-        return;
-    }
-    
-    if (id == 0x21 && len >= 10) {
-        if (d[5] == 0xA4 && d[6] == 0x00 && d[7] == 0xFE) {
-            if (d[8] == 0x00 && d[9] == 0x00) {
-                self.extConnected = YES;
-                printf("\n[READ 0x21] ✅ NUNCHUK CONFIRMED! (Type: 0x0000)\n");
-                fflush(stdout);
-            }
-            return;
-        }
-        
-        if (d[5] == 0xA4 && d[6] == 0x00 && d[7] == 0x08 && len >= 13) {
-            uint8_t *data = d + 8;
-            
-            int encrypted = 1;
-            for (int i = 0; i < 6; i++) {
-                if (data[i] != 0x17 && data[i] != 0x00 && data[i] != 0xFF) {
-                    encrypted = 0;
-                    break;
+                // EXTENSION DETECTED - DISABLE IT!
+                static BOOL extensionDisabled = NO;
+                if (!extensionDisabled) {
+                    printf("[Wii] Extension detected! Disabling...\n");
+                    fflush(stdout);
+                    
+                    // Disable extension
+                    [self writeMemory:0xA40040 data:[NSData dataWithBytes:"\x00" length:1]];
+                    usleep(50000);
+                    
+                    extensionDisabled = YES;
+                    
+                    // Re-init IR after disabling extension
+                    [self initIRWithRetry:0];
                 }
             }
-            
-            uint8_t decrypted[6];
-            for (int i = 0; i < 6; i++) {
-                decrypted[i] = data[i];
-            }
-            if (encrypted) {
-                for (int i = 0; i < 6; i++) {
-                    decrypted[i] = (data[i] ^ 0x17) + 0x17;
-                }
-            }
-            
-            [self parseNunchukData:decrypted withID:id andCoreData:NULL];
-            return;
         }
-        
-        if (d[5] == 0xA4 && d[6] == 0x00 && d[7] == 0x40 && len >= 16) {
-            printf("\n[READ 0x21] Extension key written\n");
-            fflush(stdout);
-            return;
-        }
-        return;
-    }
-    
-    if (id == 0x22) {
-        printf("[ACK 0x22] Report 0x%02X %s\n", d[2], d[3] == 0 ? "✅ OK" : "❌ ERROR");
-        fflush(stdout);
-        return;
-    }
-    
-    if (id == 0x35 || id == 0x37) {
-        uint8_t *data;
-        int extOffset;
-        
-        if (id == 0x35) {
-            extOffset = 5;   // Core(2) + Accel(3) + Ext(16)
-        } else { // 0x37
-            extOffset = 17;  // Core(2) + Accel(3) + IR(10) + Ext(6)
-        }
-        
-        if (len < extOffset + 6) return;
-        
-        // Core buttons data (2 bytes at offset 2)
-        uint8_t *coreData = d + 2;
-        
-        // Extension data
-        data = d + extOffset;
-        
-        // Parse IR data if enabled (0x37 mode)
-        // In 0x37 mode, IR data is 10 bytes starting at offset 5
-        if (self.irEnabled && id == 0x37 && len >= 27) {
-            [self parseIRData:d + 7];
-        }
-        
-        // Decrypt extension data
-        int encrypted = 1;
-        for (int i = 0; i < 6; i++) {
-            if (data[i] != 0x17 && data[i] != 0x00 && data[i] != 0xFF) {
-                encrypted = 0;
-                break;
-            }
-        }
-        
-        uint8_t decrypted[6];
-        for (int i = 0; i < 6; i++) {
-            decrypted[i] = data[i];
-        }
-        if (encrypted) {
-            for (int i = 0; i < 6; i++) {
-                decrypted[i] = (data[i] ^ 0x17) + 0x17;
-            }
-        }
-        
-        [self parseNunchukData:decrypted withID:id andCoreData:coreData];
     }
 }
 
 - (void)disconnect {
+    self.connected = NO;
+    self.connecting = NO;
+    
     if (self.ctrl) {
         [self setRumble:NO];
+        [self.ctrl closeChannel];
+        self.ctrl = nil;
     }
-    [self.ctrl closeChannel];
-    [self.intr closeChannel];
-    self.ctrl = nil;
-    self.intr = nil;
-    [self.device closeConnection];
-    self.device = nil;
-    self.connecting = NO;
+    if (self.intr) {
+        [self.intr closeChannel];
+        self.intr = nil;
+    }
+    if (self.device) {
+        [self.device closeConnection];
+        self.device = nil;
+    }
 }
 
 - (void)dealloc {

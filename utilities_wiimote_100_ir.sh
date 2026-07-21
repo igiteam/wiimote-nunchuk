@@ -352,7 +352,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("\n========== INIT IR ==========\n");
     fflush(stdout);
     
-    // STEP 1: Enable IR with 0x06 (not 0x04)
+    // STEP 1: Enable IR with 0x06 (both pixel clock and enable)
     uint8_t irEnable[] = {0xA2, 0x13, 0x06};
     [self.ctrl writeSync:irEnable length:3];
     usleep(50000);
@@ -362,63 +362,36 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self.ctrl writeSync:irEnable2 length:3];
     usleep(50000);
     
-    // STEP 3: Write 0x08 to 0xB00030 (BEFORE sensitivity)
-    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
+    // STEP 3: Write 0x01 to 0xB00030 (enable IR sensor)
+    [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x01" length:1]];
     usleep(50000);
     
-    // STEP 4: Write sensitivity blocks
-    uint8_t block1[9];
-    uint8_t block2[2];
-    
-    switch (self.sensitivityLevel) {
-        case 1:
-            memcpy(block1, (uint8_t[]){0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0x64, 0x00, 0xFE}, 9);
-            memcpy(block2, (uint8_t[]){0xFD, 0x05}, 2);
-            break;
-        case 2:
-            memcpy(block1, (uint8_t[]){0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0x96, 0x00, 0xB4}, 9);
-            memcpy(block2, (uint8_t[]){0xB3, 0x04}, 2);
-            break;
-        case 3:
-        default:
-            memcpy(block1, (uint8_t[]){0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64}, 9);
-            memcpy(block2, (uint8_t[]){0x63, 0x03}, 2);
-            break;
-        case 4:
-            memcpy(block1, (uint8_t[]){0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xC8, 0x00, 0x36}, 9);
-            memcpy(block2, (uint8_t[]){0x35, 0x03}, 2);
-            break;
-        case 5:
-            memcpy(block1, (uint8_t[]){0x07, 0x00, 0x00, 0x71, 0x01, 0x00, 0x72, 0x00, 0x20}, 9);
-            memcpy(block2, (uint8_t[]){0x1F, 0x03}, 2);
-            break;
-        case 6:
-            memcpy(block1, (uint8_t[]){0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x0C}, 9);
-            memcpy(block2, (uint8_t[]){0x00, 0x00}, 2);
-            break;
-    }
-    
+    // STEP 4: Write sensitivity blocks (using Level 3 which is standard)
+    // Block 1: 9 bytes at 0xB00000
+    uint8_t block1[] = {0x02, 0x00, 0x00, 0x71, 0x01, 0x00, 0xAA, 0x00, 0x64};
     [self writeMemory:0xB00000 data:[NSData dataWithBytes:block1 length:9]];
     usleep(50000);
     
+    // Block 2: 2 bytes at 0xB0001A
+    uint8_t block2[] = {0x63, 0x03};
     [self writeMemory:0xB0001A data:[NSData dataWithBytes:block2 length:2]];
     usleep(50000);
     
-    // STEP 5: Write IR mode (0x01 = Basic)
-    uint8_t irMode = 0x01;
+    // STEP 5: Write IR mode (0x03 for Extended Mode - needed for 12 bytes)
+    uint8_t irMode = 0x03;  // 0x01 = Basic (10 bytes), 0x03 = Extended (12 bytes)
     [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
     usleep(50000);
     
-    // STEP 6: Write 0x08 to 0xB00030 (AFTER sensitivity) - CRITICAL!
+    // STEP 6: Write 0x08 to 0xB00030 (enable IR with 8-bit mode)
     [self writeMemory:0xB00030 data:[NSData dataWithBytes:"\x08" length:1]];
     usleep(50000);
     
-    // STEP 7: Set reporting mode
+    // STEP 7: Set reporting mode to 0x33
     [self setReportingMode:0x33];
     usleep(50000);
     
-    printf("[IR] Enabled (Bottom: %s, Mode: Basic, Sens: Level %d)\n", 
-           self.irBottom ? "YES" : "NO", self.sensitivityLevel);
+    printf("[IR] Enabled (Bottom: %s, Mode: Extended (0x03), Sens: Level 3)\n", 
+           self.irBottom ? "YES" : "NO");
     printf("==================================\n\n");
     fflush(stdout);
     
@@ -552,100 +525,76 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     if (self.frameCount % 5 != 0) return;
     
+    // In report mode 0x33:
+    // data[0-1] = Buttons
+    // data[2-4] = Accelerometer
+    // data[5-16] = IR data (12 bytes)
+    
+    uint16_t buttons = (data[1] << 8) | data[0];
+    
     printf("[RAW IR] ");
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 12; i++) {
         printf("%02X ", data[i]);
     }
-    printf("| ");
+    printf("| \n");
     
+    // Extract IR data starting at offset 5
+    uint8_t *irData = data + 5;
+    
+    printf("  Buttons: 0x%04X\n", buttons);
+    printf("  Accel: %02X %02X %02X\n", data[2], data[3], data[4]);
+    printf("  IR Bytes: ");
+    for (int i = 0; i < 12; i++) {
+        printf("[%d]=%02X ", i, irData[i]);
+    }
+    printf("\n");
+    
+    // Check if we have any IR data
     BOOL hasData = NO;
-    for (int i = 0; i < 10; i++) {
-        if (data[i] != 0xFF) { hasData = YES; break; }
+    for (int i = 0; i < 12; i++) {
+        if (irData[i] != 0xFF) { hasData = YES; break; }
     }
     
     if (!hasData) {
-        printf("NO DATA\n");
+        printf("  NO IR DATA DETECTED\n");
         fflush(stdout);
         return;
     }
     
-    printf("\n  Byte:  ");
-    for (int i = 0; i < 10; i++) {
-        printf("[%d] ", i);
-    }
-    printf("\n  Value: ");
-    for (int i = 0; i < 10; i++) {
-        printf("%02X  ", data[i]);
-    }
-    printf("\n  Desc:  ");
-    printf("X1 Y1 H1 X2 Y2 X3 Y3 H2 X4 Y4\n");
+    printf("  IR Format: Extended Mode (12 bytes)\n");
+    printf("  Dot1: X,Y,Size | Dot2: X,Y,Size | Dot3: X,Y,Size | Dot4: X,Y,Size\n");
     
     int dotCount = 0;
     
-    // Dot 1: X = x1 | (x1hi << 8), Y = y1 | (y1hi << 8)
-    // In byte 2: bits 0-1 = x1hi, bits 2-3 = y1hi
-    if (data[0] != 0xFF || data[1] != 0xFF) {
-        uint16_t x1 = data[0] | ((data[2] & 0x03) << 8);  // bits 0-1 = x1hi
-        uint16_t y1 = data[1] | ((data[2] & 0x0C) << 6);  // bits 2-3 = y1hi
-        printf("  Dot1: X=%04d (0x%04X), Y=%04d (0x%04X)", x1, x1, y1, y1);
-        if (self.irBottom) {
-            y1 = 1023 - y1;
-            printf(" (flipped Y to %04d)", y1);
+    // Parse 4 dots, each with 3 bytes (X, Y, Size)
+    for (int dot = 0; dot < 4; dot++) {
+        int offset = dot * 3;
+        uint8_t xLow = irData[offset];
+        uint8_t yLow = irData[offset + 1];
+        uint8_t high = irData[offset + 2];
+        
+        // Skip if this dot is empty (all 0xFF)
+        if (xLow == 0xFF && yLow == 0xFF && high == 0xFF) {
+            continue;
         }
-        printf("\n");
-        dotCount++;
-    }
-    
-    // Dot 2: X = x2 | (x2hi << 8), Y = y2 | (y2hi << 8)
-    // In byte 2: bits 4-5 = y2hi, bits 6-7 = x2hi
-    if (data[3] != 0xFF || data[4] != 0xFF) {
-        uint16_t x2 = data[3] | ((data[2] & 0xC0) << 2);  // bits 6-7 = x2hi
-        uint16_t y2 = data[4] | ((data[2] & 0x30) << 4);  // bits 4-5 = y2hi
-        printf("  Dot2: X=%04d (0x%04X), Y=%04d (0x%04X)", x2, x2, y2, y2);
+        
+        // Extract 10-bit X and Y values
+        uint16_t x = xLow | ((high & 0x03) << 8);
+        uint16_t y = yLow | ((high & 0x0C) << 6);
+        uint8_t size = (high & 0xF0) >> 4;
+        
+        printf("  Dot%d: X=%04d (0x%04X), Y=%04d (0x%04X), Size=%d", 
+               dot + 1, x, x, y, y, size);
+        
         if (self.irBottom) {
-            y2 = 1023 - y2;
-            printf(" (flipped Y to %04d)", y2);
-        }
-        printf("\n");
-        dotCount++;
-    }
-    
-    // Dot 3: X = x3 | (x3hi << 8), Y = y3 | (y3hi << 8)
-    // In byte 7: bits 0-1 = x3hi, bits 2-3 = y3hi
-    if (data[5] != 0xFF || data[6] != 0xFF) {
-        uint16_t x3 = data[5] | ((data[7] & 0x03) << 8);  // bits 0-1 = x3hi
-        uint16_t y3 = data[6] | ((data[7] & 0x0C) << 6);  // bits 2-3 = y3hi
-        printf("  Dot3: X=%04d (0x%04X), Y=%04d (0x%04X)", x3, x3, y3, y3);
-        if (self.irBottom) {
-            y3 = 1023 - y3;
-            printf(" (flipped Y to %04d)", y3);
-        }
-        printf("\n");
-        dotCount++;
-    }
-    
-    // Dot 4: X = x4 | (x4hi << 8), Y = y4 | (y4hi << 8)
-    // In byte 7: bits 4-5 = y4hi, bits 6-7 = x4hi
-    if (data[8] != 0xFF || data[9] != 0xFF) {
-        uint16_t x4 = data[8] | ((data[7] & 0xC0) << 2);  // bits 6-7 = x4hi
-        uint16_t y4 = data[9] | ((data[7] & 0x30) << 4);  // bits 4-5 = y4hi
-        printf("  Dot4: X=%04d (0x%04X), Y=%04d (0x%04X)", x4, x4, y4, y4);
-        if (self.irBottom) {
-            y4 = 1023 - y4;
-            printf(" (flipped Y to %04d)", y4);
+            y = 1023 - y;
+            printf(" (flipped Y to %04d)", y);
         }
         printf("\n");
         dotCount++;
     }
     
     printf("  Total dots detected: %d\n", dotCount);
-    printf("  Raw data interpretation: ");
-    for (int i = 0; i < 10; i++) {
-        if (data[i] != 0xFF) {
-            printf("[%d]=%02X ", i, data[i]);
-        }
-    }
-    printf("\n");
     fflush(stdout);
 }
 
@@ -657,42 +606,31 @@ cat > "src/WiimoteManager.m" << 'EOF'
     uint8_t id = d[1];
     
     if (id == 0x33 && len >= 17) {
+        // Parse ALL data as IR - ignore extension
         [self parseIRData:d + 5];
     } else if (id == 0x20) {
         if (len >= 8) {
             self.batteryPercent = (d[7] * 100) / 0xC0;
             
-            // Check extension status
+            // Check if extension is connected
             BOOL extConnected = (d[4] & 0x02) != 0;
             
-            if (extConnected && self.connected) {
-                // Nunchuk connected - initialize it!
-                static BOOL nunchukInitialized = NO;
-                if (!nunchukInitialized) {
-                    printf("[NUNCHUK] Connected, initializing...\n");
+            if (extConnected) {
+                // EXTENSION DETECTED - DISABLE IT!
+                static BOOL extensionDisabled = NO;
+                if (!extensionDisabled) {
+                    printf("[Wii] Extension detected! Disabling...\n");
                     fflush(stdout);
                     
-                    // Initialize Nunchuk
+                    // Disable extension
                     [self writeMemory:0xA40040 data:[NSData dataWithBytes:"\x00" length:1]];
                     usleep(50000);
                     
-                    uint8_t key[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-                                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-                    [self writeMemory:0xA40040 data:[NSData dataWithBytes:key length:16]];
-                    usleep(50000);
+                    extensionDisabled = YES;
                     
-                    [self writeMemory:0xA400F0 data:[NSData dataWithBytes:"\x55" length:1]];
-                    usleep(50000);
-                    
-                    nunchukInitialized = YES;
-                    printf("[NUNCHUK] Initialized!\n");
-                    fflush(stdout);
+                    // Re-init IR after disabling extension
+                    [self initIRWithRetry:0];
                 }
-                // Re-enable data reporting after init
-                [self setReportingMode:0x33];
-            } else if (!extConnected) {
-                // No extension - just keep IR going
-                [self setReportingMode:0x33];
             }
         }
     }
