@@ -318,16 +318,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
     printf("[INIT] Nunchuk init complete\n");
     printf("==================================\n\n");
     fflush(stdout);
-    
-    // Start calibration
-    self.calibrated = NO;
-    self.calibrating = YES;
-    self.calSamples = 0;
-    self.calXSum = 0;
-    self.calYSum = 0;
-    printf("🔧 AUTO-CALIBRATING NUNCHUK...\n");
-    printf("   DON'T TOUCH THE JOYSTICK!\n\n");
-    fflush(stdout);
 }
 
 - (void)pollStatus {
