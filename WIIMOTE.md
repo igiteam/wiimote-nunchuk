@@ -344,3 +344,432 @@ The 16-byte key 0x40 0x00 0x00... is:
     Without this step, you get encrypted garbage data
 
 This is THE missing piece that makes Nunchuk work! 🎯
+
+
+/**
+ * Parses Extended IR Mode (0x33) data from the Wiimote
+ * 
+ * Extended Mode provides 4 tracking points with size information.
+ * Data format: 12 bytes for 4 objects, 3 bytes per object
+ * 
+ * Byte layout per object (3 bytes):
+ *   Byte 0: X low 8 bits
+ *   Byte 1: Y low 8 bits  
+ *   Byte 2: [Y high 2 bits][X high 2 bits][Size 4 bits]
+ *           Bits 7-6: Y high (0-3) -> shifted by 2 to create 10-bit Y (0-1023)
+ *           Bits 5-4: X high (0-3) -> shifted by 4 to create 10-bit X (0-1023)
+ *           Bits 3-0: Size (0-15) - brightness/intensity of the IR dot
+ * 
+ * Position calculation:
+ *   X = low_byte | (high_bits << 4)  -> gives range 0-1023
+ *   Y = low_byte | (high_bits << 2)  -> gives range 0-1023
+ * 
+ * Object detection:
+ *   - If both X and Y low bytes are 0xFF, the object is considered invalid/not visible
+ *   - Size is used to determine dot brightness/confidence (larger = brighter/closer)
+ * 
+ * This mode is used when tracking multiple IR sources (like both sensor bar LEDs)
+ * and provides the most detailed IR information including dot sizes.
+ */
+- (void)parseExtendedIRData:(uint8_t *)irData length:(int)irLength {
+    // Guard: Exit if IR tracking is disabled globally
+    if (!self.irEnabled) return;
+    
+    // Check if any data is valid (not all 0xFF)
+    // 0xFF indicates no object detected at that position
+    BOOL hasData = NO;
+    for (int i = 0; i < irLength; i++) {
+        if (irData[i] != 0xFF) { hasData = YES; break; }
+    }
+    
+    // If no valid data, clear all dot positions and update cursor (likely move to edge/corner)
+    if (!hasData) {
+        self.irX1 = self.irX2 = self.irX3 = self.irX4 = -1;
+        self.irY1 = self.irY2 = self.irY3 = self.irY4 = -1;
+        [self updateQuartzMousePosition];
+        return;
+    }
+
+    // --- Object 1 (First IR dot) ---
+    // Bytes 0-2: [X_low][Y_low][X_high|Y_high|Size]
+    // Extract X: combine low byte (0) with high bits from byte2 bits 5-4
+    // Extract Y: combine low byte (1) with high bits from byte2 bits 7-6
+    // Extract Size: byte2 bits 3-0 (0-15 range)
+    if (irData[0] != 0xFF || irData[1] != 0xFF) {
+        uint16_t x = irData[0] | ((irData[2] & 0x30) << 4);  // 0x30 masks bits 5-4, shift by 4
+        uint16_t y = irData[1] | ((irData[2] & 0xC0) << 2);  // 0xC0 masks bits 7-6, shift by 2
+        self.irX1 = x;
+        self.irY1 = y;
+        self.irSize1 = irData[2] & 0x0F;  // 0x0F masks size bits 3-0
+    } else { 
+        self.irX1 = -1; 
+        self.irY1 = -1; 
+    }
+
+    // --- Object 2 (Second IR dot) ---
+    // Bytes 3-5: [X_low][Y_low][X_high|Y_high|Size]
+    // Same extraction pattern as Object 1, just offset by 3 bytes
+    if (irData[3] != 0xFF || irData[4] != 0xFF) {
+        uint16_t x = irData[3] | ((irData[5] & 0x30) << 4);
+        uint16_t y = irData[4] | ((irData[5] & 0xC0) << 2);
+        self.irX2 = x;
+        self.irY2 = y;
+        self.irSize2 = irData[5] & 0x0F;
+    } else { 
+        self.irX2 = -1; 
+        self.irY2 = -1; 
+    }
+
+    // --- Object 3 (Third IR dot) ---
+    // Bytes 6-8: [X_low][Y_low][X_high|Y_high|Size]
+    // Typically used for additional tracking points or reflections
+    if (irData[6] != 0xFF || irData[7] != 0xFF) {
+        uint16_t x = irData[6] | ((irData[8] & 0x30) << 4);
+        uint16_t y = irData[7] | ((irData[8] & 0xC0) << 2);
+        self.irX3 = x;
+        self.irY3 = y;
+        self.irSize3 = irData[8] & 0x0F;
+    } else { 
+        self.irX3 = -1; 
+        self.irY3 = -1; 
+    }
+
+    // --- Object 4 (Fourth IR dot) ---
+    // Bytes 9-11: [X_low][Y_low][X_high|Y_high|Size]
+    // Usually noise/reflections or the second set of points from a 4-LED sensor bar
+    if (irData[9] != 0xFF || irData[10] != 0xFF) {
+        uint16_t x = irData[9] | ((irData[11] & 0x30) << 4);
+        uint16_t y = irData[10] | ((irData[11] & 0xC0) << 2);
+        self.irX4 = x;
+        self.irY4 = y;
+        self.irSize4 = irData[11] & 0x0F;
+    } else { 
+        self.irX4 = -1; 
+        self.irY4 = -1; 
+    }
+
+    // Convert parsed IR data to system mouse cursor movement
+    // This typically averages the two brightest dots (P1 and P2) 
+    // to get the center point between the two sensor bar LEDs
+    [self updateQuartzMousePosition];
+
+    // Increment frame counter for debug throttling
+    self.frameCount++;
+
+    // Debug output: print dot positions every 5 frames to avoid console spam
+    if (self.debugIR && (self.frameCount % 5 == 0)) {
+        printf("[IR - Mode 0x%02X] Dots: ", self.currentMode);
+        int dots = 0;
+        if (self.irX1 != -1) { printf("P1:(%d,%d,s:%d) ", self.irX1, self.irY1, self.irSize1); dots++; }
+        if (self.irX2 != -1) { printf("P2:(%d,%d,s:%d) ", self.irX2, self.irY2, self.irSize2); dots++; }
+        if (self.irX3 != -1) { printf("P3:(%d,%d,s:%d) ", self.irX3, self.irY3, self.irSize3); dots++; }
+        if (self.irX4 != -1) { printf("P4:(%d,%d,s:%d) ", self.irX4, self.irY4, self.irSize4); dots++; }
+        if (dots == 0) printf("None");
+        printf("\n");
+        fflush(stdout);
+    }
+}
+
+/**
+ * Parses Basic IR Mode (0x37) data from the Wiimote
+ * 
+ * Basic Mode is a more compact format that packs 4 objects into 10 bytes.
+ * It's used when more bandwidth is needed for other data (like extension controllers).
+ * 
+ * Data format: 10 bytes for 4 objects, packed tightly
+ * 
+ * Byte layout (based on Dolphin Emulator's IRBasic struct):
+ *   byte0:  P1 X low 8 bits
+ *   byte1:  P1 Y low 8 bits
+ *   byte2:  [P1 Y high 2 bits][P1 X high 2 bits][P2 Y high 2 bits][P2 X high 2 bits]
+ *           Bits 7-6: P1 Y high (0-3) -> shifted by 2
+ *           Bits 5-4: P1 X high (0-3) -> shifted by 4
+ *           Bits 3-2: P2 Y high (0-3) -> shifted by 6
+ *           Bits 1-0: P2 X high (0-3) -> shifted by 8
+ *   byte3:  P2 X low 8 bits
+ *   byte4:  P2 Y low 8 bits
+ *   byte5:  P3 X low 8 bits
+ *   byte6:  P3 Y low 8 bits
+ *   byte7:  [P3 Y high 2 bits][P3 X high 2 bits][P4 Y high 2 bits][P4 X high 2 bits]
+ *           Same bit pattern as byte2, but for P3 and P4
+ *   byte8:  P4 X low 8 bits
+ *   byte9:  P4 Y low 8 bits
+ * 
+ * Position calculation:
+ *   P1: X = byte0 | ((byte2 & 0x30) << 4)  -> bits 5-4 shifted by 4
+ *       Y = byte1 | ((byte2 & 0xC0) << 2)  -> bits 7-6 shifted by 2
+ *   P2: X = byte3 | ((byte2 & 0x03) << 8)  -> bits 1-0 shifted by 8
+ *       Y = byte4 | ((byte2 & 0x0C) << 6)  -> bits 3-2 shifted by 6
+ *   P3: X = byte5 | ((byte7 & 0x30) << 4)  -> same pattern as P1 but using byte7
+ *       Y = byte6 | ((byte7 & 0xC0) << 2)  -> same pattern as P1 but using byte7
+ *   P4: X = byte8 | ((byte7 & 0x03) << 8)  -> same pattern as P2 but using byte7
+ *       Y = byte9 | ((byte7 & 0x0C) << 6)  -> same pattern as P2 but using byte7
+ * 
+ * Important: Unlike Extended Mode, Basic Mode does NOT include size information
+ * and the bit layout is different!
+ * 
+ * This mode is less detailed but more efficient, used when you need
+ * IR tracking alongside extension controller data.
+ */
+- (void)parseBasicIRData:(uint8_t *)irData length:(int)irLength {
+    // Guard: Exit if IR tracking is disabled globally
+    if (!self.irEnabled) return;
+    
+    // Check if any data is valid (not all 0xFF)
+    BOOL hasData = NO;
+    for (int i = 0; i < irLength; i++) {
+        if (irData[i] != 0xFF) { hasData = YES; break; }
+    }
+    
+    // If no valid data, clear all dot positions and update cursor
+    if (!hasData) {
+        self.irX1 = self.irX2 = self.irX3 = self.irX4 = -1;
+        self.irY1 = self.irY2 = self.irY3 = self.irY4 = -1;
+        [self updateQuartzMousePosition];
+        return;
+    }
+
+    // --- Object 1 (First IR dot) ---
+    // Uses byte2 bits 5-4 for X high, bits 7-6 for Y high
+    // Same extraction as Extended Mode but WITHOUT size data
+    if (irData[0] != 0xFF || irData[1] != 0xFF) {
+        // X = low byte (0) + high bits from byte2 bits 5-4 shifted by 4
+        uint16_t x = irData[0] | ((irData[2] & 0x30) << 4);  // 0x30 = bits 5-4
+        // Y = low byte (1) + high bits from byte2 bits 7-6 shifted by 2
+        uint16_t y = irData[1] | ((irData[2] & 0xC0) << 2);  // 0xC0 = bits 7-6
+        self.irX1 = x;
+        self.irY1 = y;
+        self.irSize1 = 0;  // No size in Basic Mode
+    } else {
+        self.irX1 = -1;
+        self.irY1 = -1;
+    }
+
+    // --- Object 2 (Second IR dot) ---
+    // Uses byte2 bits 1-0 for X high, bits 3-2 for Y high
+    // IMPORTANT: Different bit positions than P1!
+    if (irData[3] != 0xFF || irData[4] != 0xFF) {
+        // X = low byte (3) + high bits from byte2 bits 1-0 shifted by 8
+        uint16_t x = irData[3] | ((irData[2] & 0x03) << 8);  // 0x03 = bits 1-0
+        // Y = low byte (4) + high bits from byte2 bits 3-2 shifted by 6
+        uint16_t y = irData[4] | ((irData[2] & 0x0C) << 6);  // 0x0C = bits 3-2
+        self.irX2 = x;
+        self.irY2 = y;
+        self.irSize2 = 0;
+    } else {
+        self.irX2 = -1;
+        self.irY2 = -1;
+    }
+
+    // --- Object 3 (Third IR dot) ---
+    // Uses byte7 bits 5-4 for X high, bits 7-6 for Y high
+    // Same pattern as P1 but using byte7 instead of byte2
+    if (irData[5] != 0xFF || irData[6] != 0xFF) {
+        uint16_t x = irData[5] | ((irData[7] & 0x30) << 4);
+        uint16_t y = irData[6] | ((irData[7] & 0xC0) << 2);
+        self.irX3 = x;
+        self.irY3 = y;
+        self.irSize3 = 0;
+    } else {
+        self.irX3 = -1;
+        self.irY3 = -1;
+    }
+
+    // --- Object 4 (Fourth IR dot) ---
+    // Uses byte7 bits 1-0 for X high, bits 3-2 for Y high
+    // Same pattern as P2 but using byte7 instead of byte2
+    if (irData[8] != 0xFF || irData[9] != 0xFF) {
+        uint16_t x = irData[8] | ((irData[7] & 0x03) << 8);
+        uint16_t y = irData[9] | ((irData[7] & 0x0C) << 6);
+        self.irX4 = x;
+        self.irY4 = y;
+        self.irSize4 = 0;
+    } else {
+        self.irX4 = -1;
+        self.irY4 = -1;
+    }
+
+    // Debug output: print parsed values
+    if (self.debugIR) {
+        printf("[IR Basic Parsed] P1:(%d,%d) P2:(%d,%d) P3:(%d,%d) P4:(%d,%d)\n", 
+               self.irX1, self.irY1, self.irX2, self.irY2, 
+               self.irX3, self.irY3, self.irX4, self.irY4);
+        fflush(stdout);
+    }
+
+    // Update mouse position using P1 and P2 (the two sensor bar LEDs)
+    // P3 and P4 are typically noise/reflections and are ignored
+    [self updateQuartzMousePosition];
+
+    self.frameCount++;
+}
+
+/**
+ * Handles incoming L2CAP channel data from the Wiimote
+ * 
+ * This is the main data processing entry point for all Wiimote reports.
+ * L2CAP (Logical Link Control and Adaptation Protocol) is the Bluetooth 
+ * protocol layer that carries Wiimote data.
+ * 
+ * Wiimote report format (standard):
+ *   Byte 0: 0xA1 - HID Data report header (Input report)
+ *   Byte 1: Report ID - Determines the data format (0x20, 0x30, 0x31, 0x33, 0x37)
+ *   Bytes 2+: Report payload (varies by report ID)
+ * 
+ * Report ID meanings:
+ *   0x20: Status report (battery, LEDs, etc.)
+ *   0x30: Basic mode - Buttons + Accel (no IR)
+ *   0x31: Buttons + Accel
+ *   0x33: Extended IR mode - Buttons + Accel + 12-byte IR data
+ *   0x37: Basic IR mode - Buttons + Accel + 10-byte IR data + 6-byte Extension
+ * 
+ * Data offsets within reports:
+ *   - Bytes 0-1: Report header (0xA1 + reportID)
+ *   - Bytes 2-3: Button data (2 bytes, 11 buttons)
+ *   - Bytes 4-6: Accelerometer data (3 bytes, X/Y/Z)
+ *   - Bytes 7+: IR data or extension data depending on mode
+ * 
+ * IR data locations:
+ *   - Mode 0x33: IR data starts at offset 7 (payload+5) and is 12 bytes
+ *   - Mode 0x37: IR data starts at offset 7 (payload+5) and is 10 bytes
+ *   - Extension data: Mode 0x37 has 6 extra bytes after IR data
+ */
+- (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
+    // Cast raw data to byte pointer for easier access
+    uint8_t *d = (uint8_t *)dp;
+    
+    // Validate: All Wiimote input reports start with 0xA1
+    // Minimum length check (need at least report ID)
+    if (len < 2 || d[0] != 0xA1) return;
+
+    // Extract report ID (second byte) and get pointer to payload (skip header)
+    uint8_t reportID = d[1];
+    uint8_t *payload = d + 2;
+
+    // Parse button data (present in all report modes)
+    // Buttons are stored in first 2 bytes of payload:
+    //   Byte 0: A, B, 1, 2, -, +, Home, Unused
+    //   Byte 1: Left, Right, Down, Up, Trigger, etc.
+    if (len >= 4) {
+        [self parseWiimoteButtons:payload];
+    }
+
+    // Parse IR data based on report mode
+    if (reportID == 0x33 && len >= 17) {
+        // Mode 0x33: Extended IR Mode
+        // Layout: [Buttons(2)][Accel(3)][IR(12)]
+        // IR data starts at payload+5 (skip buttons and accel)
+        // 12 bytes = 4 objects × 3 bytes each
+        [self parseExtendedIRData:payload + 5 length:12];
+        
+    } else if (reportID == 0x37 && len >= 21) {
+        // Mode 0x37: Basic IR Mode with Extension
+        // Layout: [Buttons(2)][Accel(3)][IR(10)][Extension(6)]
+        // IR data starts at payload+5 (skip buttons and accel)
+        // 10 bytes = 4 objects packed into 10 bytes
+        [self parseBasicIRData:payload + 5 length:10];
+        
+    } else if (reportID == 0x20 && len >= 8) {
+        // Mode 0x20: Status Report
+        // Layout: [Buttons(2)][Battery(1)][...]
+        // Battery is at payload+5 (byte 5 of payload)
+        // Formula: (battery_value / 0xC0) * 100 to get percentage
+        // 0xC0 = 192, max battery value
+        self.batteryPercent = (payload[5] * 100) / 0xC0;
+    }
+}
+
+/**
+ * Switches the Wiimote reporting mode and configures IR hardware accordingly
+ * 
+ * Reporting modes determine what data the Wiimote sends back:
+ *   - 0x30: Buttons + Accelerometer (No IR)
+ *   - 0x31: Buttons + Accelerometer (No IR)
+ *   - 0x33: Extended IR Mode (4 dots with size data)
+ *   - 0x37: Basic IR Mode (4 dots packed, with extension data)
+ * 
+ * IMPORTANT: IR mode changes require re-initializing the IR camera hardware
+ * because different IR modes use different data formats:
+ *   - Basic Mode (0x01): 10-byte compact format for 0x37
+ *   - Extended Mode (0x03): 12-byte detailed format for 0x33
+ * 
+ * The hardware re-initialization sequence:
+ *   1. Disable IR tracking (write 0x00 to 0xB00030)
+ *   2. Wait 100ms for hardware to settle
+ *   3. Set IR mode (write mode to 0xB00033)
+ *   4. Wait 100ms for mode change to take effect
+ *   5. Re-enable IR tracking (write 0x08 to 0xB00030)
+ *   6. Wait 100ms for IR to stabilize
+ * 
+ * Hardware registers (based on Dolphin emulator):
+ *   0xB00030: IR Enable (0x00 = disabled, 0x08 = enabled)
+ *   0xB00033: IR Mode (0x01 = Basic, 0x03 = Extended, 0x05 = Full)
+ *   0xB00006: IR Sensitivity (0x90 = default)
+ *   0xB00008: IR Sensitivity (0xC0 = default)
+ *   0xB0001A: IR Sensitivity (0x40 = default)
+ * 
+ * The reporting mode change itself is sent via HID command:
+ *   Byte 0: 0xA2 - HID Output report
+ *   Byte 1: 0x12 - Set Report command
+ *   Byte 2: 0x04 - Reporting mode feature
+ *   Byte 3: mode - The new reporting mode (0x30, 0x31, 0x33, 0x37)
+ */
+- (void)setReportingMode:(uint8_t)mode {
+    // Guard: Need control channel to send commands
+    if (!self.ctrl) return;
+    
+    // --- Handle IR mode switching for 0x37 (Basic Mode) ---
+    // Only reconfigure if switching TO 0x37 from a different mode
+    if (mode == 0x37 && self.currentMode != 0x37) {
+        printf("[IR] Switching to Basic Mode for 0x37...\n");
+        fflush(stdout);
+        
+        // Step 1: Disable IR tracking
+        uint8_t zero = 0x00;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&zero length:1]];
+        usleep(100000);  // 100ms delay - critical for hardware settling
+        
+        // Step 2: Set IR mode to Basic (0x01)
+        uint8_t irMode = 0x01;
+        [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
+        usleep(100000);  // 100ms delay for mode change
+        
+        // Step 3: Re-enable IR tracking
+        uint8_t enableIR = 0x08;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&enableIR length:1]];
+        usleep(100000);  // 100ms delay for IR stabilization
+    }
+    
+    // --- Handle IR mode switching for 0x33 (Extended Mode) ---
+    // Only reconfigure if switching FROM 0x37 TO 0x33
+    if (mode == 0x33 && self.currentMode == 0x37) {
+        printf("[IR] Switching to Extended Mode for 0x33...\n");
+        fflush(stdout);
+        
+        // Step 1: Disable IR tracking
+        uint8_t zero = 0x00;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&zero length:1]];
+        usleep(100000);
+        
+        // Step 2: Set IR mode to Extended (0x03)
+        uint8_t irMode = 0x03;
+        [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
+        usleep(100000);
+        
+        // Step 3: Re-enable IR tracking
+        uint8_t enableIR = 0x08;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&enableIR length:1]];
+        usleep(100000);
+    }
+    
+    // --- Send the reporting mode change command ---
+    // 0xA2 = HID Output report (host to device)
+    // 0x12 = Set Report (configures Wiimote settings)
+    // 0x04 = Report Mode feature (sets data format)
+    // mode = The new reporting mode (0x30, 0x31, 0x33, or 0x37)
+    uint8_t report[] = {0xA2, 0x12, 0x04, mode};
+    [self.ctrl writeSync:report length:4];
+    
+    // Store the current mode for future mode switching logic
+    self.currentMode = mode;
+}

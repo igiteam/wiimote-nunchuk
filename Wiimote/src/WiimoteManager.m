@@ -1,39 +1,3 @@
-#!/bin/bash
-# Wiimote - IR DEBUGGER WITH DYNAMIC MODE SWITCHING & QUARTZ MOUSE MOVEMENT
-
-set -e
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-echo -e "${CYAN}"
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║      WIIMOTE - DYNAMIC MODE SWITCHER & QUARTZ MOUSE MOVE       ║"
-echo "║            HOT-SWAP REPORT MODES (1, 2, +, -, Home, A)        ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-APP_NAME="Wiimote"
-BUNDLE_ID="com.github.wiimote"
-
-rm -rf "$APP_NAME"
-mkdir -p "$APP_NAME"/src
-cd "$APP_NAME" || exit
-
-cat > "src/WiimoteManager.h" << 'EOF'
-#import <Foundation/Foundation.h>
-
-@interface WiimoteManager : NSObject
-@property (nonatomic, assign) uint8_t currentMode;
-- (void)start;
-- (void)stop;
-@end
-EOF
-
-cat > "src/WiimoteManager.m" << 'EOF'
 #import "WiimoteManager.h"
 #import <IOBluetooth/IOBluetooth.h>
 #import <AppKit/AppKit.h>
@@ -436,6 +400,50 @@ cat > "src/WiimoteManager.m" << 'EOF'
 
 - (void)setReportingMode:(uint8_t)mode {
     if (!self.ctrl) return;
+    
+    // If switching to mode 0x37, switch IR to Basic Mode (0x01)
+    if (mode == 0x37 && self.currentMode != 0x37) {
+        printf("[IR] Switching to Basic Mode for 0x37...\n");
+        fflush(stdout);
+        
+        // Disable IR: write 0x00 to 0xB00030
+        uint8_t disableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x00};
+        [self.ctrl writeSync:disableIR length:8];
+        usleep(100000);
+        
+        // Set IR mode to Basic (0x01) at 0xB00033
+        uint8_t irModeBasic[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x33, 0x01, 0x01};
+        [self.ctrl writeSync:irModeBasic length:8];
+        usleep(100000);
+        
+        // Re-enable IR: write 0x08 to 0xB00030
+        uint8_t enableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x08};
+        [self.ctrl writeSync:enableIR length:8];
+        usleep(100000);
+    }
+    
+    // If switching TO mode 0x33 FROM mode 0x37, switch IR to Extended Mode (0x03)
+    if (mode == 0x33 && self.currentMode == 0x37) {
+        printf("[IR] Switching to Extended Mode for 0x33...\n");
+        fflush(stdout);
+        
+        // Disable IR: write 0x00 to 0xB00030
+        uint8_t disableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x00};
+        [self.ctrl writeSync:disableIR length:8];
+        usleep(100000);
+        
+        // Set IR mode to Extended (0x03) at 0xB00033
+        uint8_t irModeExtended[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x33, 0x01, 0x03};
+        [self.ctrl writeSync:irModeExtended length:8];
+        usleep(100000);
+        
+        // Re-enable IR: write 0x08 to 0xB00030
+        uint8_t enableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x08};
+        [self.ctrl writeSync:enableIR length:8];
+        usleep(100000);
+    }
+    
+    // Send the reporting mode change
     uint8_t report[] = {0xA2, 0x12, 0x04, mode};
     [self.ctrl writeSync:report length:4];
     self.currentMode = mode;
@@ -572,11 +580,11 @@ cat > "src/WiimoteManager.m" << 'EOF'
     prevBtnA = self.btnA;
 }
 
-- (void)parseExtendedIRData:(uint8_t *)irData {
+- (void)parseExtendedIRData:(uint8_t *)irData length:(int)irLength {
     if (!self.irEnabled) return;
     
     BOOL hasData = NO;
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < irLength; i++) {
         if (irData[i] != 0xFF) { hasData = YES; break; }
     }
     
@@ -642,6 +650,79 @@ cat > "src/WiimoteManager.m" << 'EOF'
     }
 }
 
+- (void)parseBasicIRData:(uint8_t *)irData length:(int)irLength {
+    if (!self.irEnabled) return;
+    
+    BOOL hasData = NO;
+    for (int i = 0; i < irLength; i++) {
+        if (irData[i] != 0xFF) { hasData = YES; break; }
+    }
+    
+    if (!hasData) {
+        self.irX1 = self.irX2 = self.irX3 = self.irX4 = -1;
+        self.irY1 = self.irY2 = self.irY3 = self.irY4 = -1;
+        [self updateQuartzMousePosition];
+        return;
+    }
+
+    // Basic Mode: 10 bytes for 4 objects
+    // Object 1 (P1) - bytes 0-2
+    uint16_t x1 = (irData[0] & 0xFF) | ((irData[2] & 0x0C) << 6);
+    uint16_t y1 = (irData[1] & 0xFF) | ((irData[2] & 0x03) << 8);
+    
+    // Object 2 (P2) - bytes 2-4
+    uint16_t x2 = (irData[3] & 0xFF) | ((irData[2] & 0xC0) << 2);
+    uint16_t y2 = (irData[4] & 0xFF) | ((irData[2] & 0x30) << 4);
+    
+    // Object 3 (P3) - bytes 5-7 ← THIS IS THE REAL TRACKING DATA!
+    uint16_t x3 = (irData[5] & 0xFF) | ((irData[7] & 0x0C) << 6);
+    uint16_t y3 = (irData[6] & 0xFF) | ((irData[7] & 0x03) << 8);
+    
+    // Object 4 (P4) - bytes 7-9
+    uint16_t x4 = (irData[8] & 0xFF) | ((irData[7] & 0xC0) << 2);
+    uint16_t y4 = (irData[9] & 0xFF) | ((irData[7] & 0x30) << 4);
+    
+    // Map P3 to P1 for mouse tracking (P3 has the real data)
+    if (x3 <= 1023 && y3 <= 767 && x3 != 0 && y3 != 0) {
+        self.irX1 = x3;
+        self.irY1 = y3;
+        self.irSize1 = 0;
+    } else {
+        self.irX1 = -1;
+        self.irY1 = -1;
+    }
+    
+    // Map P4 to P2 if it's valid
+    if (x4 <= 1023 && y4 <= 767 && x4 != 0 && y4 != 0) {
+        self.irX2 = x4;
+        self.irY2 = y4;
+        self.irSize2 = 0;
+    } else {
+        self.irX2 = -1;
+        self.irY2 = -1;
+    }
+    
+    // Clear P3 and P4
+    self.irX3 = self.irX4 = -1;
+    self.irY3 = self.irY4 = -1;
+    self.irSize3 = self.irSize4 = 0;
+
+    // Update mouse position
+    [self updateQuartzMousePosition];
+
+    self.frameCount++;
+
+    if (self.debugIR && (self.frameCount % 5 == 0)) {
+        printf("[IR - Mode 0x%02X] Dots: ", self.currentMode);
+        int dots = 0;
+        if (self.irX1 != -1) { printf("P1:(%d,%d) ", self.irX1, self.irY1); dots++; }
+        if (self.irX2 != -1) { printf("P2:(%d,%d) ", self.irX2, self.irY2); dots++; }
+        if (dots == 0) printf("None");
+        printf("\n");
+        fflush(stdout);
+    }
+}
+
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
     uint8_t *d = (uint8_t *)dp;
     if (len < 2 || d[0] != 0xA1) return;
@@ -657,10 +738,10 @@ cat > "src/WiimoteManager.m" << 'EOF'
     // Parse Extended IR depending on active mode offsets
     if (reportID == 0x33 && len >= 17) {
         // Mode 0x33: 2-byte Buttons + 3-byte Accel + 12-byte Extended IR
-        [self parseExtendedIRData:payload + 5];
+        [self parseExtendedIRData:payload + 5 length:12];
     } else if (reportID == 0x37 && len >= 23) {
-        // Mode 0x37: 2-byte Buttons + 3-byte Accel + 6-byte Ext + 10/12-byte IR
-        [self parseExtendedIRData:payload + 11];
+        // Mode 0x37: 2-byte Buttons + 3-byte Accel + 10-byte Basic IR + 6-byte Extenstion
+        [self parseBasicIRData:payload + 5 length:10];
     } else if (reportID == 0x20 && len >= 8) {
         self.batteryPercent = (payload[5] * 100) / 0xC0;
     }
@@ -680,141 +761,3 @@ cat > "src/WiimoteManager.m" << 'EOF'
     [self disconnect];
 }
 @end
-EOF
-
-cat > "src/AppDelegate.h" << 'EOF'
-#import <Cocoa/Cocoa.h>
-@interface AppDelegate : NSObject <NSApplicationDelegate>
-@end
-EOF
-
-cat > "src/AppDelegate.m" << 'EOF'
-#import "AppDelegate.h"
-#import "WiimoteManager.h"
-
-@interface AppDelegate ()
-@property (nonatomic, strong) NSStatusItem *statusItem;
-@property (nonatomic, strong) WiimoteManager *wiimoteManager;
-@property (nonatomic, strong) NSMenuItem *toggleMenuItem;
-@property (nonatomic, assign) BOOL isActive;
-@end
-
-@implementation AppDelegate
-- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    self.wiimoteManager = [[WiimoteManager alloc] init];
-    self.isActive = NO;
-    self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-    self.statusItem.button.title = @"🎮";
-    
-    NSMenu *menu = [[NSMenu alloc] init];
-    self.toggleMenuItem = [[NSMenuItem alloc] initWithTitle:@"Start Wiimote"
-                                                      action:@selector(toggleWiimote:)
-                                               keyEquivalent:@"s"];
-    self.toggleMenuItem.target = self;
-    [menu addItem:self.toggleMenuItem];
-    [menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
-                                                       action:@selector(quitApp:)
-                                                keyEquivalent:@"q"];
-    quitItem.target = self;
-    [menu addItem:quitItem];
-    self.statusItem.menu = menu;
-    
-    [self performSelector:@selector(autoStart) withObject:nil afterDelay:0.5];
-}
-
-- (void)autoStart {
-    self.isActive = YES;
-    [self.wiimoteManager start];
-    self.toggleMenuItem.title = @"Stop Wiimote";
-}
-
-- (void)toggleWiimote:(id)sender {
-    self.isActive = !self.isActive;
-    if (self.isActive) {
-        [self.wiimoteManager start];
-        self.toggleMenuItem.title = @"Stop Wiimote";
-    } else {
-        [self.wiimoteManager stop];
-        self.toggleMenuItem.title = @"Start Wiimote";
-    }
-}
-
-- (void)quitApp:(id)sender {
-    [self.wiimoteManager stop];
-    [NSApp terminate:nil];
-}
-@end
-EOF
-
-cat > "src/main.m" << 'EOF'
-#import <Cocoa/Cocoa.h>
-#import "AppDelegate.h"
-int main(int argc, const char * argv[]) {
-    @autoreleasepool {
-        NSApplication *app = [NSApplication sharedApplication];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
-        app.delegate = delegate;
-        [app run];
-    }
-    return 0;
-}
-EOF
-
-# Build & Package Execution
-echo -e "${CYAN}🔨 Compiling App Bundle with Quartz CoreGraphics support...${NC}"
-
-APP_BUNDLE="$APP_NAME.app"
-rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_BUNDLE/Contents/"{MacOS,Resources}
-
-cat > "Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleDisplayName</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleIdentifier</key>
-    <string>$BUNDLE_ID</string>
-    <key>CFBundleVersion</key>
-    <string>1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Wiimote needs Bluetooth</string>
-</dict>
-</plist>
-EOF
-
-cp "Info.plist" "$APP_BUNDLE/Contents/"
-
-clang -framework Cocoa -framework Foundation -framework AppKit -framework CoreGraphics -framework IOBluetooth -framework Carbon -fobjc-arc -Wno-deprecated-declarations -mmacosx-version-min=11.0 -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" src/*.m 2> build_errors.log
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ Compilation successful!${NC}"
-else
-    echo -e "${RED}❌ Compilation failed:${NC}"
-    cat build_errors.log
-    exit 1
-fi
-
-codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
-xattr -cr "$APP_BUNDLE"
-
-cp -R "$APP_BUNDLE" "$HOME/Applications/" 2>/dev/null || true
-cp -R "$APP_BUNDLE" "$HOME/Desktop/" 2>/dev/null || true
-
-echo -e "\n${GREEN}🚀 Application compiled and ready with Quartz Mouse Support!${NC}"
-echo -e "${CYAN}Run directly with:${NC}"
-echo -e "   $APP_BUNDLE/Contents/MacOS/$APP_NAME\n"
