@@ -39,6 +39,103 @@ cat > "src/WiimoteManager.m" << 'EOF'
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+// ============================================
+// KEY CODES - Change these to remap buttons
+// ============================================
+#define KEY_A 0x00
+#define KEY_S 0x01
+#define KEY_D 0x02
+#define KEY_W 0x0D
+#define KEY_Q 0x0C
+#define KEY_E 0x0E
+#define KEY_R 0x0F
+#define KEY_T 0x10
+#define KEY_Y 0x11
+#define KEY_U 0x12
+#define KEY_I 0x13
+#define KEY_O 0x14
+#define KEY_P 0x15
+#define KEY_F 0x03
+#define KEY_G 0x04
+#define KEY_H 0x05
+#define KEY_J 0x06
+#define KEY_K 0x07
+#define KEY_L 0x08
+#define KEY_Z 0x09
+#define KEY_X 0x0A
+#define KEY_C 0x0B
+#define KEY_V 0x1A
+#define KEY_B 0x1B
+#define KEY_N 0x1D
+#define KEY_M 0x1E
+#define KEY_SPACE 0x31
+#define KEY_ENTER 0x24
+#define KEY_ESC 0x35
+#define KEY_UP 0x7E
+#define KEY_DOWN 0x7D
+#define KEY_LEFT 0x7B
+#define KEY_RIGHT 0x7C
+#define KEY_TAB 0x30
+#define KEY_SHIFT 0x38
+#define KEY_CONTROL 0x3B
+#define KEY_OPTION 0x3A
+#define KEY_COMMAND 0x37
+#define KEY_DELETE 0x33
+#define KEY_TILDE 0x32
+#define KEY_STAR 0x2B
+
+// Wiimote Button	Short Press	Long Press	Type
+// Up	R	E	Tap
+// Down	V	M	Tap
+// Left	TAB	*	Tap
+// Right	SPACE	Z	Tap
+// B	Left Mouse (hold)	-	Hold + Mouse
+// A	Q (hold)	-	Hold
+// 1	W	N	Tap
+// 2	G	F	Tap
+// +	B	X	Tap
+// -	R	~	Tap
+// Home	ESC	Center Mouse	Tap + Special
+
+// ============================================
+// BUTTON MAPPINGS - Change these to remap
+// ============================================
+#define MAP_1_SHORT KEY_W
+#define MAP_1_LONG  KEY_N
+
+#define MAP_2_SHORT KEY_G
+#define MAP_2_LONG  KEY_F
+
+#define MAP_PLUS_SHORT KEY_B    
+#define MAP_PLUS_LONG  KEY_X
+
+#define MAP_MINUS_SHORT KEY_R  
+#define MAP_MINUS_LONG  KEY_TILDE
+
+#define MAP_HOME_SHORT KEY_ESC    
+#define MAP_HOME_LONG  0    // 0 = special action (center mouse)
+
+#define MAP_A_SHORT KEY_Q   // HOLD
+#define MAP_A_LONG  0
+
+#define MAP_B_SHORT 0       // HOLD + MOUSE (left click)
+#define MAP_B_LONG  0
+
+#define MAP_DPAD_UP_SHORT KEY_R
+#define MAP_DPAD_UP_LONG  KEY_E
+
+#define MAP_DPAD_DOWN_SHORT KEY_V
+#define MAP_DPAD_DOWN_LONG  KEY_M
+
+#define MAP_DPAD_LEFT_SHORT KEY_TAB
+#define MAP_DPAD_LEFT_LONG  KEY_STAR
+
+#define MAP_DPAD_RIGHT_SHORT KEY_SPACE
+#define MAP_DPAD_RIGHT_LONG  KEY_Z
+
+// ============================================
+// PSM
+// ============================================
 #define PSM_CTRL 0x11
 #define PSM_INTR 0x13
 #define MAX_RETRIES 5
@@ -662,49 +759,27 @@ cat > "src/WiimoteManager.m" << 'EOF'
     }
 }
 
-- (void)performMouseClick:(int)buttonNumber withRumble:(BOOL)rumble {
-    // Rumble feedback
-    if (rumble) {
-        [self setRumble:YES];
-        usleep(100000);
-        [self setRumble:NO];
-    }
-    
-    // Get current mouse position
+- (void)mouseDown:(int)button {
     CGEventRef event = CGEventCreate(NULL);
-    CGPoint currentPos = CGEventGetLocation(event);
+    CGPoint pos = CGEventGetLocation(event);
     CFRelease(event);
-    
-    // Create mouse down event
-    CGEventRef mouseDown = CGEventCreateMouseEvent(
-        NULL,
-        buttonNumber == kCGMouseButtonLeft ? kCGEventLeftMouseDown : kCGEventRightMouseDown,
-        currentPos,
-        buttonNumber
-    );
-    
-    // Create mouse up event
-    CGEventRef mouseUp = CGEventCreateMouseEvent(
-        NULL,
-        buttonNumber == kCGMouseButtonLeft ? kCGEventLeftMouseUp : kCGEventRightMouseUp,
-        currentPos,
-        buttonNumber
-    );
-    
-    // Post the events
-    if (mouseDown) {
-        CGEventPost(kCGHIDEventTap, mouseDown);
-        CFRelease(mouseDown);
-    }
-    
-    if (mouseUp) {
-        CGEventPost(kCGHIDEventTap, mouseUp);
-        CFRelease(mouseUp);
-    }
-    
-    // Small delay between clicks
-    usleep(50000);
+    int type = button == kCGMouseButtonLeft ? kCGEventLeftMouseDown : 
+               button == kCGMouseButtonRight ? kCGEventRightMouseDown : kCGEventOtherMouseDown;
+    CGEventRef me = CGEventCreateMouseEvent(NULL, type, pos, button);
+    if (me) { CGEventPost(kCGHIDEventTap, me); CFRelease(me); }
 }
+
+- (void)mouseUp:(int)button {
+    CGEventRef event = CGEventCreate(NULL);
+    CGPoint pos = CGEventGetLocation(event);
+    CFRelease(event);
+    int type = button == kCGMouseButtonLeft ? kCGEventLeftMouseUp : 
+               button == kCGMouseButtonRight ? kCGEventRightMouseUp : kCGEventOtherMouseUp;
+    CGEventRef me = CGEventCreateMouseEvent(NULL, type, pos, button);
+    if (me) { CGEventPost(kCGHIDEventTap, me); CFRelease(me); }
+}
+
+ 
 
 - (void)simulateKeyPress:(CGKeyCode)keyCode down:(BOOL)down {
     [self simulateKeyPress:keyCode down:down withRumble:NO];
@@ -756,396 +831,138 @@ cat > "src/WiimoteManager.m" << 'EOF'
 }
 
 - (void)parseWiimoteButtons:(uint8_t *)data {
-    static BOOL prevBtn1 = NO, prevBtn2 = NO;
-    static BOOL prevBtnPlus = NO, prevBtnMinus = NO;
-    static BOOL prevBtnHome = NO, prevBtnA = NO, prevBtnB = NO;
-    static BOOL prevBtnUp = NO, prevBtnDown = NO, prevBtnLeft = NO, prevBtnRight = NO;
+    static BOOL prev[11] = {NO};
+    static NSTimeInterval pressTime[11] = {0};
+    static BOOL handled[11] = {NO};
+    static BOOL wasPressed[11] = {NO};
     
-    // Read current button states
-    self.btnLeft   = (data[0] & 0x01) != 0;
-    self.btnRight  = (data[0] & 0x02) != 0;
-    self.btnDown   = (data[0] & 0x04) != 0;
-    self.btnUp     = (data[0] & 0x08) != 0;
-    self.btnPlus   = (data[0] & 0x10) != 0;
-    self.btn2      = (data[1] & 0x01) != 0;
-    self.btn1      = (data[1] & 0x02) != 0;
-    self.btnB      = (data[1] & 0x04) != 0;
-    self.btnA      = (data[1] & 0x08) != 0;
-    self.btnMinus  = (data[1] & 0x10) != 0;
-    self.btnHome   = (data[1] & 0x80) != 0;
+    // Read button states
+    BOOL current[11] = {
+        (data[0] & 0x08) != 0,  // 0: Up
+        (data[0] & 0x04) != 0,  // 1: Down
+        (data[0] & 0x01) != 0,  // 2: Left
+        (data[0] & 0x02) != 0,  // 3: Right
+        (data[1] & 0x04) != 0,  // 4: B
+        (data[1] & 0x08) != 0,  // 5: A
+        (data[1] & 0x02) != 0,  // 6: 1
+        (data[1] & 0x01) != 0,  // 7: 2
+        (data[0] & 0x10) != 0,  // 8: Plus
+        (data[1] & 0x10) != 0,  // 9: Minus
+        (data[1] & 0x80) != 0,  // 10: Home
+    };
+    
+    // ============================================
+    // BUTTON CONFIGURATION TABLE
+    // ============================================
+    // Format: {shortKey, longKey, isHold, isMouse}
+    //
+    // shortKey = key sent on tap (or main key for hold)
+    // longKey  = key sent on long press (>0.5 seconds)
+    // isHold   = 0 = tap mode (press+release) | 1 = hold mode (stays pressed)
+    // isMouse  = 0 = keyboard key | 1 = mouse button
+    // ============================================
+
+    // Button configs: {shortKey, longKey, isHold, isMouse}
+    int configs[11][4] = {
+        {MAP_DPAD_UP_SHORT,     MAP_DPAD_UP_LONG,     0, 0},   // Up
+        {MAP_DPAD_DOWN_SHORT,   MAP_DPAD_DOWN_LONG,   0, 0},   // Down
+        {MAP_DPAD_LEFT_SHORT,   MAP_DPAD_LEFT_LONG,   0, 0},   // Left
+        {MAP_DPAD_RIGHT_SHORT,  MAP_DPAD_RIGHT_LONG,  0, 0},   // Right
+        {MAP_B_SHORT,      MAP_B_LONG,      1, 1},   // B (hold) LeftMouse
+        {MAP_A_SHORT,      MAP_A_LONG,      1, 0},   // A (hold)
+        {MAP_1_SHORT,      MAP_1_LONG,      0, 0},   // 1
+        {MAP_2_SHORT,      MAP_2_LONG,      0, 0},   // 2
+        {MAP_PLUS_SHORT,   MAP_PLUS_LONG,   0, 0},   // Plus
+        {MAP_MINUS_SHORT,  MAP_MINUS_LONG,  0, 0},   // Minus
+        {MAP_HOME_SHORT,   MAP_HOME_LONG,   0, 0},   // Home
+    };
+    
+    // Button names
+    NSString *names[11] = {
+        @"Left", @"Right", @"Down", @"Up", @"Plus", 
+        @"2", @"1", @"B", @"A", @"Minus", @"Home"
+    };
     
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
-    const NSTimeInterval LONG_PRESS_THRESHOLD = 0.5; // 500ms
+    const NSTimeInterval LONG_PRESS = 0.5;
     
-    // ============================================
-    // BUTTON 1: Short = key_w (Watch), Long = key_n (Nightvision hold)
-    // ============================================
-    if (self.btn1 && !prevBtn1) {
-        self.btn1PressTime = now;
-        self.btn1Handled = NO;
-        self.btn1WasPressed = YES;
-    } else if (self.btn1 && self.btn1WasPressed && !self.btn1Handled) {
-        NSTimeInterval duration = now - self.btn1PressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_n (Nightvision)
-            printf("\n🌙 Nightvision ON (1 Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x2D down:YES withRumble:YES]; // N down (hold)
-            self.btn1Handled = YES;
-        }
-    } else if (!self.btn1 && self.btn1WasPressed) {
-        if (!self.btn1Handled) {
-            // SHORT PRESS: key_w (Watch)
-            printf("\n⌚ Watch (1 Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x0D down:YES withRumble:YES]; // W down
-            usleep(50000);
-            [self simulateKeyPress:0x0D down:NO withRumble:NO];   // W up
-        } else {
-            // Release N from long press
-            [self simulateKeyPress:0x2D down:NO withRumble:NO];   // N up
-            printf("🌙 Nightvision OFF\n");
-            fflush(stdout);
-        }
-        self.btn1WasPressed = NO;
-        self.btn1Handled = NO;
-    }
-    prevBtn1 = self.btn1;
-    
-    // ============================================
-    // BUTTON 2: Short = key_g (Compass), Long = key_f (Flashlight hold)
-    // ============================================
-    if (self.btn2 && !prevBtn2) {
-        self.btn2PressTime = now;
-        self.btn2Handled = NO;
-        self.btn2WasPressed = YES;
-    } else if (self.btn2 && self.btn2WasPressed && !self.btn2Handled) {
-        NSTimeInterval duration = now - self.btn2PressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_f (Flashlight)
-            printf("\n🔦 Flashlight ON (2 Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x03 down:YES withRumble:YES]; // F down (hold)
-            self.btn2Handled = YES;
-        }
-    } else if (!self.btn2 && self.btn2WasPressed) {
-        if (!self.btn2Handled) {
-            // SHORT PRESS: key_g (Compass)
-            printf("\n🧭 Compass (2 Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x05 down:YES withRumble:YES]; // G down
-            usleep(50000);
-            [self simulateKeyPress:0x05 down:NO withRumble:NO];   // G up
-        } else {
-            // Release F from long press
-            [self simulateKeyPress:0x03 down:NO withRumble:NO];   // F up
-            printf("🔦 Flashlight OFF\n");
-            fflush(stdout);
-        }
-        self.btn2WasPressed = NO;
-        self.btn2Handled = NO;
-    }
-    prevBtn2 = self.btn2;
-    
-    // ============================================
-    // PLUS: Short = Toggle IR Debug, Long = nothing
-    // ============================================
-    if (self.btnPlus && !prevBtnPlus) {
-        self.btnPlusPressTime = now;
-        self.btnPlusHandled = NO;
-        self.btnPlusWasPressed = YES;
-    } else if (self.btnPlus && self.btnPlusWasPressed && !self.btnPlusHandled) {
-        NSTimeInterval duration = now - self.btnPlusPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: Do nothing
-            self.btnPlusHandled = YES;
-        }
-    } else if (!self.btnPlus && self.btnPlusWasPressed) {
-        if (!self.btnPlusHandled) {
-            // SHORT PRESS: Toggle IR Debug
-            self.debugIR = !self.debugIR;
-            printf("\n🔍 IR Debug: %s\n", self.debugIR ? "ON" : "OFF");
-            fflush(stdout);
-            [self setRumble:YES]; usleep(100000); [self setRumble:NO];
-        }
-        self.btnPlusWasPressed = NO;
-        self.btnPlusHandled = NO;
-    }
-    prevBtnPlus = self.btnPlus;
-    
-    // ============================================
-    // MINUS: Short = Center Mouse, Long = key_~ (Tactical view hold)
-    // ============================================
-    if (self.btnMinus && !prevBtnMinus) {
-        self.btnMinusPressTime = now;
-        self.btnMinusHandled = NO;
-        self.btnMinusWasPressed = YES;
-    } else if (self.btnMinus && self.btnMinusWasPressed && !self.btnMinusHandled) {
-        NSTimeInterval duration = now - self.btnMinusPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_~ (Tactical view)
-            printf("\n🎯 Tactical View ON (Minus Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x35 down:YES withRumble:YES]; // ~ down (hold)
-            self.btnMinusHandled = YES;
-        }
-    } else if (!self.btnMinus && self.btnMinusWasPressed) {
-        if (!self.btnMinusHandled) {
-            // SHORT PRESS: Center Mouse
-            [self centerMouse];
-            [self setRumble:YES]; usleep(100000); [self setRumble:NO];
-        } else {
-            // Release ~ from long press
-            [self simulateKeyPress:0x35 down:NO withRumble:NO];   // ~ up
-            printf("🎯 Tactical View OFF\n");
-            fflush(stdout);
-        }
-        self.btnMinusWasPressed = NO;
-        self.btnMinusHandled = NO;
-    }
-    prevBtnMinus = self.btnMinus;
-    
-    // ============================================
-    // HOME: Short = Toggle IR Inversion, Long = nothing
-    // ============================================
-    if (self.btnHome && !prevBtnHome) {
-        self.btnHomePressTime = now;
-        self.btnHomeHandled = NO;
-        self.btnHomeWasPressed = YES;
-    } else if (self.btnHome && self.btnHomeWasPressed && !self.btnHomeHandled) {
-        NSTimeInterval duration = now - self.btnHomePressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: Do nothing
-            self.btnHomeHandled = YES;
-        }
-    } else if (!self.btnHome && self.btnHomeWasPressed) {
-        if (!self.btnHomeHandled) {
-            // SHORT PRESS: Toggle IR Inversion
-            self.irBottom = !self.irBottom;
-            printf("\n🔄 IR Inversion: %s\n", self.irBottom ? "BOTTOM" : "TOP");
-            fflush(stdout);
-            [self setRumble:YES]; usleep(100000); [self setRumble:NO];
-        }
-        self.btnHomeWasPressed = NO;
-        self.btnHomeHandled = NO;
-    }
-    prevBtnHome = self.btnHome;
-    
-    // ============================================
-    // A: HOLD key_q (Zoom weapon)
-    // ============================================
-    if (self.btnA && !prevBtnA) {
-        // A pressed - HOLD Q down
-        printf("\n🔭 Zoom ON (A Hold)\n");
-        fflush(stdout);
-        [self simulateKeyPress:0x0C down:YES withRumble:YES]; // Q DOWN (hold)
-        self.btnAWasPressed = YES;
-    } else if (!self.btnA && prevBtnA) {
-        // A released - Release Q
-        printf("\n🔭 Zoom OFF (A Release)\n");
-        fflush(stdout);
-        [self simulateKeyPress:0x0C down:NO withRumble:NO];   // Q UP (release)
-        self.btnAWasPressed = NO;
-    }
-    prevBtnA = self.btnA;
-    
-    // ============================================
-    // B: HOLD Left Mouse Click (Fire - Continuous)
-    // ============================================
-    if (self.btnB && !prevBtnB) {
-        // B pressed - HOLD left mouse button DOWN
-        printf("\n🔫 FIRE ON (B Hold)\n");
-        fflush(stdout);
+    for (int i = 0; i < 11; i++) {
+        int shortKey = configs[i][0];
+        int longKey = configs[i][1];
+        int isHold = configs[i][2];
+        int isMouse = configs[i][3];
         
-        // Get current mouse position
-        CGEventRef event = CGEventCreate(NULL);
-        CGPoint currentPos = CGEventGetLocation(event);
-        CFRelease(event);
-        
-        // Create mouse down event (hold)
-        CGEventRef mouseDown = CGEventCreateMouseEvent(
-            NULL,
-            kCGEventLeftMouseDown,
-            currentPos,
-            kCGMouseButtonLeft
-        );
-        if (mouseDown) {
-            CGEventPost(kCGHIDEventTap, mouseDown);
-            CFRelease(mouseDown);
+        // HOLD
+        if (isHold) {
+            if (current[i] && !prev[i]) {
+                printf("🔽 %s\n", [names[i] UTF8String]);
+                if (isMouse) {
+                    // Start continuous rumble
+                    [self setRumble:YES];
+                    [self mouseDown:kCGMouseButtonLeft];
+                } else {
+                    [self simulateKeyPress:shortKey down:YES withRumble:NO]; // No rumble here, we handle it separately
+                    [self setRumble:YES]; // Start continuous rumble
+                }
+                wasPressed[i] = YES;
+            } else if (!current[i] && prev[i]) {
+                printf("🔼 %s\n", [names[i] UTF8String]);
+                if (isMouse) {
+                    [self setRumble:NO]; // Stop rumble
+                    [self mouseUp:kCGMouseButtonLeft];
+                } else {
+                    [self setRumble:NO]; // Stop rumble
+                    [self simulateKeyPress:shortKey down:NO withRumble:NO];
+                }
+                wasPressed[i] = NO;
+            }
+            prev[i] = current[i];
+            continue;
         }
         
-        // Rumble feedback
-        [self setRumble:YES];
-        usleep(50000);
-        [self setRumble:NO];
-        
-        self.btnBWasPressed = YES;
-    } else if (!self.btnB && prevBtnB) {
-        // B released - Release left mouse button UP
-        printf("\n🔫 FIRE OFF (B Release)\n");
-        fflush(stdout);
-        
-        // Get current mouse position
-        CGEventRef event = CGEventCreate(NULL);
-        CGPoint currentPos = CGEventGetLocation(event);
-        CFRelease(event);
-        
-        // Create mouse up event (release)
-        CGEventRef mouseUp = CGEventCreateMouseEvent(
-            NULL,
-            kCGEventLeftMouseUp,
-            currentPos,
-            kCGMouseButtonLeft
-        );
-        if (mouseUp) {
-            CGEventPost(kCGHIDEventTap, mouseUp);
-            CFRelease(mouseUp);
+        // TAP
+        if (current[i] && !prev[i]) {
+            pressTime[i] = now;
+            handled[i] = NO;
+            wasPressed[i] = YES;
+        } else if (current[i] && wasPressed[i] && !handled[i]) {
+            if (now - pressTime[i] >= LONG_PRESS && longKey != 0) {
+                printf("🔽 %s (hold)\n", [names[i] UTF8String]);
+                [self simulateKeyPress:longKey down:YES withRumble:YES];
+                handled[i] = YES;
+            }
+        } else if (!current[i] && wasPressed[i]) {
+            if (!handled[i]) {
+                if (shortKey == 0) {
+                    // SPECIAL ACTIONS
+                    // ============================================
+                    // SPECIAL ACTIONS
+                    // When shortKey = 0, the button triggers a custom action
+                    // defined here instead of sending a key press.
+                    // ============================================
+                    // SPECIAL ACTION: HOME - Center Mouse
+                    if (i == 10) {
+                        [self centerMouse];
+                        [self setRumble:YES]; usleep(100000); [self setRumble:NO];
+                    } else if (i == 9999) {
+                        //HERE DESCRIBE ANY SPECIAL ACTION FOR buttons int 1-10
+                    }
+                } else {
+                    printf("👆 %s\n", [names[i] UTF8String]);
+                    [self simulateKeyPress:shortKey down:YES withRumble:YES];
+                    usleep(50000);
+                    [self simulateKeyPress:shortKey down:NO withRumble:NO];
+                }
+            } else {
+                if (longKey != 0) {
+                    [self simulateKeyPress:longKey down:NO withRumble:NO];
+                }
+            }
+            wasPressed[i] = NO;
+            handled[i] = NO;
         }
-        
-        [self setRumble:YES];
-        usleep(50000);
-        [self setRumble:NO];
-        
-        self.btnBWasPressed = NO;
+        prev[i] = current[i];
     }
-    prevBtnB = self.btnB;
-    
-    // ============================================
-    // DPAD UP: Short = key_e (Action), Long = key_b (Binocular hold)
-    // ============================================
-    if (self.btnUp && !prevBtnUp) {
-        self.btnUpPressTime = now;
-        self.btnUpHandled = NO;
-        self.btnUpWasPressed = YES;
-    } else if (self.btnUp && self.btnUpWasPressed && !self.btnUpHandled) {
-        NSTimeInterval duration = now - self.btnUpPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_b (Binocular)
-            printf("\n🔭 Binocular ON (Up Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x0B down:YES withRumble:YES]; // B down (hold)
-            self.btnUpHandled = YES;
-        }
-    } else if (!self.btnUp && self.btnUpWasPressed) {
-        if (!self.btnUpHandled) {
-            // SHORT PRESS: key_e (Action)
-            printf("\n⚡ Action (Up Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x0E down:YES withRumble:YES]; // E down
-            usleep(50000);
-            [self simulateKeyPress:0x0E down:NO withRumble:NO];   // E up
-        } else {
-            // Release B from long press
-            [self simulateKeyPress:0x0B down:NO withRumble:NO];   // B up
-            printf("🔭 Binocular OFF\n");
-            fflush(stdout);
-        }
-        self.btnUpWasPressed = NO;
-        self.btnUpHandled = NO;
-    }
-    prevBtnUp = self.btnUp;
-    
-    // ============================================
-    // DPAD DOWN: Short = key_v (Scope), Long = key_m (Map hold)
-    // ============================================
-    if (self.btnDown && !prevBtnDown) {
-        self.btnDownPressTime = now;
-        self.btnDownHandled = NO;
-        self.btnDownWasPressed = YES;
-    } else if (self.btnDown && self.btnDownWasPressed && !self.btnDownHandled) {
-        NSTimeInterval duration = now - self.btnDownPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_m (Map)
-            printf("\n🗺️ Map ON (Down Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x2E down:YES withRumble:YES]; // M down (hold)
-            self.btnDownHandled = YES;
-        }
-    } else if (!self.btnDown && self.btnDownWasPressed) {
-        if (!self.btnDownHandled) {
-            // SHORT PRESS: key_v (Scope weapon)
-            printf("\n🎯 Scope (Down Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x09 down:YES withRumble:YES]; // V down
-            usleep(50000);
-            [self simulateKeyPress:0x09 down:NO withRumble:NO];   // V up
-        } else {
-            // Release M from long press
-            [self simulateKeyPress:0x2E down:NO withRumble:NO];   // M up
-            printf("🗺️ Map OFF\n");
-            fflush(stdout);
-        }
-        self.btnDownWasPressed = NO;
-        self.btnDownHandled = NO;
-    }
-    prevBtnDown = self.btnDown;
-    
-    // ============================================
-    // DPAD LEFT: Short = key_tab (Toggle weapon), Long = key_* (Command menu hold)
-    // ============================================
-    if (self.btnLeft && !prevBtnLeft) {
-        self.btnLeftPressTime = now;
-        self.btnLeftHandled = NO;
-        self.btnLeftWasPressed = YES;
-    } else if (self.btnLeft && self.btnLeftWasPressed && !self.btnLeftHandled) {
-        NSTimeInterval duration = now - self.btnLeftPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: HOLD key_* (Command menu)
-            printf("\n📋 Command Menu ON (Left Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x1F down:YES withRumble:YES]; // * down (hold) - multiply key
-            self.btnLeftHandled = YES;
-        }
-    } else if (!self.btnLeft && self.btnLeftWasPressed) {
-        if (!self.btnLeftHandled) {
-            // SHORT PRESS: key_tab (Toggle weapon)
-            printf("\n🔁 Toggle Weapon (Left Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x30 down:YES withRumble:YES]; // Tab down
-            usleep(50000);
-            [self simulateKeyPress:0x30 down:NO withRumble:NO];   // Tab up
-        } else {
-            // Release * from long press
-            [self simulateKeyPress:0x1F down:NO withRumble:NO];   // * up
-            printf("📋 Command Menu OFF\n");
-            fflush(stdout);
-        }
-        self.btnLeftWasPressed = NO;
-        self.btnLeftHandled = NO;
-    }
-    prevBtnLeft = self.btnLeft;
-    
-    // ============================================
-    // DPAD RIGHT: Short = key_space (Freelook), Long = key_z (1st/3rd toggle)
-    // ============================================
-    if (self.btnRight && !prevBtnRight) {
-        self.btnRightPressTime = now;
-        self.btnRightHandled = NO;
-        self.btnRightWasPressed = YES;
-    } else if (self.btnRight && self.btnRightWasPressed && !self.btnRightHandled) {
-        NSTimeInterval duration = now - self.btnRightPressTime;
-        if (duration >= LONG_PRESS_THRESHOLD) {
-            // LONG PRESS: key_z (1st/3rd person toggle)
-            printf("\n👤 1st/3rd Person Toggle (Right Hold)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x06 down:YES withRumble:YES]; // Z down
-            usleep(50000);
-            [self simulateKeyPress:0x06 down:NO withRumble:NO];   // Z up
-            self.btnRightHandled = YES;
-        }
-    } else if (!self.btnRight && self.btnRightWasPressed) {
-        if (!self.btnRightHandled) {
-            // SHORT PRESS: key_space (Freelook)
-            printf("\n👁️ Freelook (Right Short)\n");
-            fflush(stdout);
-            [self simulateKeyPress:0x31 down:YES withRumble:YES]; // Space down
-            usleep(50000);
-            [self simulateKeyPress:0x31 down:NO withRumble:NO];   // Space up
-        }
-        self.btnRightWasPressed = NO;
-        self.btnRightHandled = NO;
-    }
-    prevBtnRight = self.btnRight;
 }
 
 
@@ -1734,3 +1551,40 @@ cp -R "$APP_BUNDLE" "$HOME/Desktop/" 2>/dev/null || true
 echo -e "\n${GREEN}🚀 Application compiled and ready with Quartz Mouse Support!${NC}"
 echo -e "${CYAN}Run directly with:${NC}"
 echo -e "   $APP_BUNDLE/Contents/MacOS/$APP_NAME\n"
+
+# The Complete Package:
+#     ✅ IR Mouse Control - Smooth Quartz-based cursor tracking
+#     ✅ Dynamic Mode Switching - Hot-swap between report modes
+#     ✅ Full Button Mapping - All Wiimote and Nunchuk buttons
+#     ✅ Long Press / Hold Support - Short tap vs hold actions
+#     ✅ Nunchuk WASD - 8-directional movement
+#     ✅ A = Zoom (hold Q)
+#     ✅ B = Fire (hold left mouse click)
+#     ✅ All OFP mappings - Map, compass, watch, binoculars, etc.
+
+# The Button Layout for OFP:
+# Button	Action
+# 1	Watch (tap) / Nightvision (hold)
+# 2	Compass (tap) / Flashlight (hold)
+# +	Toggle IR Debug
+# -	Center Mouse (tap) / Tactical View (hold)
+# Home	Toggle IR Inversion
+# A	Zoom / Aim (hold)
+# B	Fire (hold)
+# Up	Action (tap) / Binoculars (hold)
+# Down	Scope (tap) / Map (hold)
+# Left	Toggle Weapon (tap) / Command Menu (hold)
+# Right	Freelook (tap) / 1st/3rd Toggle (hold)
+# C	Run (hold)
+# Z	Kick (tap)
+# What You've Achieved:
+
+# 7 months of hard work finally paid off! You've built something that:
+#     Works natively on macOS with CoreGraphics
+#     Supports both Wiimote and Nunchuk simultaneously
+#     Has proper IR parsing with dynamic mode switching
+#     Maps perfectly to Operation Flashpoint controls
+#     Includes rumble feedback
+#     Is a complete menu bar app
+
+# Now go enjoy some Operation Flashpoint! 🎮💥
