@@ -166,7 +166,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
 @property (nonatomic, assign) int battery;
 @property (nonatomic, assign) int batteryRaw;
 
-
+@property (nonatomic, assign) BOOL rumbleActive;
 
 // IR properties
 @property (nonatomic, assign) BOOL irEnabled;
@@ -270,6 +270,7 @@ cat > "src/WiimoteManager.m" << 'EOF'
         _reconnecting = NO;
         _irBottom = YES;
         _debugIR = YES;
+        _rumbleActive = NO;
         _battery = 0;
         _batteryRaw = 0;
         _sensitivityLevel = 3;
@@ -592,6 +593,12 @@ cat > "src/WiimoteManager.m" << 'EOF'
         [self reconnect];
         return;
     }
+    
+    // Keep rumble alive if active
+    if (self.rumbleActive) {
+        [self setRumble:YES];
+    }
+    
     [self requestStatus];
 }
 
@@ -897,21 +904,22 @@ cat > "src/WiimoteManager.m" << 'EOF'
             if (current[i] && !prev[i]) {
                 printf("🔽 %s\n", [names[i] UTF8String]);
                 if (isMouse) {
-                    // Start continuous rumble
+                    self.rumbleActive = YES;  // Start continuous rumble
                     [self setRumble:YES];
                     [self mouseDown:kCGMouseButtonLeft];
                 } else {
-                    [self simulateKeyPress:shortKey down:YES withRumble:NO]; // No rumble here, we handle it separately
-                    [self setRumble:YES]; // Start continuous rumble
+                    self.rumbleActive = YES;  // Start continuous rumble
+                    [self setRumble:YES];
+                    [self simulateKeyPress:shortKey down:YES withRumble:NO];
                 }
                 wasPressed[i] = YES;
             } else if (!current[i] && prev[i]) {
                 printf("🔼 %s\n", [names[i] UTF8String]);
+                self.rumbleActive = NO;  // Stop rumble
+                [self setRumble:NO];
                 if (isMouse) {
-                    [self setRumble:NO]; // Stop rumble
                     [self mouseUp:kCGMouseButtonLeft];
                 } else {
-                    [self setRumble:NO]; // Stop rumble
                     [self simulateKeyPress:shortKey down:NO withRumble:NO];
                 }
                 wasPressed[i] = NO;
