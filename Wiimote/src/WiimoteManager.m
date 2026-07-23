@@ -862,7 +862,7 @@
         @"A",      // 5
         @"Minus",  // 6
         @"Plus",   // 7
-        @"Home"    // 8
+        @"Home",   // 8
         @"1",      // 9
         @"2",      // 10
     };
@@ -1343,8 +1343,28 @@
             fflush(stdout);
             
             if (extConnected) {
-                // Nunchuk CONNECTED - use mode 0x37 (Basic IR + Extension)
+                // Nunchuk CONNECTED - fully reinitialize
+                self.extInitialized = NO;
+                self.calibrated = NO;
+                self.calibrating = NO;
+                self.joyXCenter = 128;
+                self.joyYCenter = 128;
+                self.calSamples = 0;
+                self.calXSum = 0;
+                self.calYSum = 0;
+                
+                // Switch to mode 0x37 first
                 [self setReportingMode:0x37];
+                usleep(100000);
+                
+                // Reinitialize the Nunchuk extension
+                [self initExtension];
+                usleep(100000);
+                
+                // Request status to confirm
+                [self requestStatus];
+                usleep(100000);
+                
                 printf("\n🔄 Nunchuk Connected → Mode 0x37 (Basic IR + Nunchuk)\n");
                 fflush(stdout);
                 [self setRumble:YES]; 
