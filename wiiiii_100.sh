@@ -100,38 +100,39 @@ cat > "src/WiimoteManager.m" << 'EOF'
 // ============================================
 // BUTTON MAPPINGS - Change these to remap
 // ============================================
-#define MAP_1_SHORT KEY_W
+
+#define MAP_DPAD_UP_SHORT KEY_E          // use
+#define MAP_DPAD_UP_LONG  KEY_UP          // up
+
+#define MAP_DPAD_DOWN_SHORT KEY_V        // aim
+#define MAP_DPAD_DOWN_LONG  KEY_DOWN        // down
+
+#define MAP_DPAD_LEFT_SHORT KEY_TAB      // change burst
+#define MAP_DPAD_LEFT_LONG  KEY_TILDE     // command
+
+#define MAP_DPAD_RIGHT_SHORT KEY_SPACE   // free view
+#define MAP_DPAD_RIGHT_LONG  KEY_Z       // 3d person
+
+#define MAP_A_SHORT KEY_Q   // HOLD zoom
+#define MAP_A_LONG  0       // HOLD zoom
+
+#define MAP_B_SHORT 0       // TAP MOUSE (left click)
+#define MAP_B_LONG  0       // HOLD + MOUSE (left click)
+
+#define MAP_MINUS_SHORT KEY_R  // reload
+#define MAP_MINUS_LONG  KEY_G  // 
+
+#define MAP_PLUS_SHORT KEY_B    
+#define MAP_PLUS_LONG  0     // 0 = special action (center mouse)
+
+#define MAP_HOME_SHORT KEY_ESC  // esc game 
+#define MAP_HOME_LONG  KEY_ESC //  esc game (its hard to longpress HOME)
+
+#define MAP_1_SHORT KEY_X
 #define MAP_1_LONG  KEY_N
 
 #define MAP_2_SHORT KEY_G
 #define MAP_2_LONG  KEY_F
-
-#define MAP_PLUS_SHORT KEY_B    
-#define MAP_PLUS_LONG  KEY_X
-
-#define MAP_MINUS_SHORT KEY_R  
-#define MAP_MINUS_LONG  KEY_TILDE
-
-#define MAP_HOME_SHORT KEY_ESC    
-#define MAP_HOME_LONG  0    // 0 = special action (center mouse)
-
-#define MAP_A_SHORT KEY_Q   // HOLD
-#define MAP_A_LONG  0
-
-#define MAP_B_SHORT 0       // HOLD + MOUSE (left click)
-#define MAP_B_LONG  0
-
-#define MAP_DPAD_UP_SHORT KEY_R
-#define MAP_DPAD_UP_LONG  KEY_E
-
-#define MAP_DPAD_DOWN_SHORT KEY_V
-#define MAP_DPAD_DOWN_LONG  KEY_M
-
-#define MAP_DPAD_LEFT_SHORT KEY_TAB
-#define MAP_DPAD_LEFT_LONG  KEY_STAR
-
-#define MAP_DPAD_RIGHT_SHORT KEY_SPACE
-#define MAP_DPAD_RIGHT_LONG  KEY_Z
 
 // ============================================
 // PSM
@@ -847,17 +848,17 @@ cat > "src/WiimoteManager.m" << 'EOF'
     
     // Read button states
     BOOL current[11] = {
-        (data[0] & 0x08) != 0,  // 0: Up
-        (data[0] & 0x04) != 0,  // 1: Down
-        (data[0] & 0x01) != 0,  // 2: Left
-        (data[0] & 0x02) != 0,  // 3: Right
+        (data[0] & 0x08) != 0,  // 0: Dpad_Up
+        (data[0] & 0x04) != 0,  // 1: Dpad_Down
+        (data[0] & 0x01) != 0,  // 2: Dpad_Left
+        (data[0] & 0x02) != 0,  // 3: Dpad_Right
         (data[1] & 0x04) != 0,  // 4: B
         (data[1] & 0x08) != 0,  // 5: A
-        (data[1] & 0x02) != 0,  // 6: 1
-        (data[1] & 0x01) != 0,  // 7: 2
-        (data[0] & 0x10) != 0,  // 8: Plus
-        (data[1] & 0x10) != 0,  // 9: Minus
-        (data[1] & 0x80) != 0,  // 10: Home
+        (data[1] & 0x10) != 0,  // 6: Minus
+        (data[0] & 0x10) != 0,  // 7: Plus
+        (data[1] & 0x80) != 0,  // 8: Home
+        (data[1] & 0x02) != 0,  // 9: 1
+        (data[1] & 0x01) != 0,  // 10: 2
     };
     
     // ============================================
@@ -879,11 +880,11 @@ cat > "src/WiimoteManager.m" << 'EOF'
         {MAP_DPAD_RIGHT_SHORT,  MAP_DPAD_RIGHT_LONG,  0, 0},   // 3: Right
         {MAP_B_SHORT,           MAP_B_LONG,           1, 1},   // 4: B
         {MAP_A_SHORT,           MAP_A_LONG,           1, 0},   // 5: A
-        {MAP_1_SHORT,           MAP_1_LONG,           0, 0},   // 6: 1
-        {MAP_2_SHORT,           MAP_2_LONG,           0, 0},   // 7: 2
-        {MAP_PLUS_SHORT,        MAP_PLUS_LONG,        0, 0},   // 8: Plus
-        {MAP_MINUS_SHORT,       MAP_MINUS_LONG,       0, 0},   // 9: Minus
-        {MAP_HOME_SHORT,        MAP_HOME_LONG,        0, 0},   // 10: Home
+        {MAP_MINUS_SHORT,       MAP_MINUS_LONG,       0, 0},   // 6: Minus
+        {MAP_PLUS_SHORT,        MAP_PLUS_LONG,        0, 0},   // 7: Plus
+        {MAP_HOME_SHORT,        MAP_HOME_LONG,        0, 0},   // 8: Home
+        {MAP_1_SHORT,           MAP_1_LONG,           0, 0},   // 9: 1
+        {MAP_2_SHORT,           MAP_2_LONG,           0, 0},   // 10: 2
     };
     
     // Button names
@@ -895,11 +896,11 @@ cat > "src/WiimoteManager.m" << 'EOF'
         @"Right",  // 3
         @"B",      // 4
         @"A",      // 5
-        @"1",      // 6
-        @"2",      // 7
-        @"Plus",   // 8
-        @"Minus",  // 9
-        @"Home"    // 10
+        @"Minus",  // 6
+        @"Plus",   // 7
+        @"Home",   // 8
+        @"1",      // 9
+        @"2",      // 10
     };
     
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
@@ -966,8 +967,8 @@ cat > "src/WiimoteManager.m" << 'EOF'
                     // When shortKey = 0, the button triggers a custom action
                     // defined here instead of sending a key press.
                     // ============================================
-                    // SPECIAL ACTION: HOME - Center Mouse
-                    if (i == 10) {
+                    // SPECIAL ACTION: Plus - Center Mouse
+                    if (i == 7) {
                         [self centerMouse];
                         [self setRumble:YES]; usleep(100000); [self setRumble:NO];
                     } else if (i == 9999) {
@@ -1378,8 +1379,41 @@ cat > "src/WiimoteManager.m" << 'EOF'
             fflush(stdout);
             
             if (extConnected) {
+                // Nunchuk CONNECTED - fully reinitialize
+                self.extInitialized = NO;
+                self.calibrated = NO;
+                self.calibrating = NO;
+                self.joyXCenter = 128;
+                self.joyYCenter = 128;
+                self.calSamples = 0;
+                self.calXSum = 0;
+                self.calYSum = 0;
+                
+                // Switch to mode 0x37 first
+                [self setReportingMode:0x37];
+                usleep(100000);
+                
+                // Reinitialize the Nunchuk extension
                 [self initExtension];
+                usleep(100000);
+                
+                // Request status to confirm
                 [self requestStatus];
+                usleep(100000);
+                
+                printf("\n🔄 Nunchuk Connected → Mode 0x37 (Basic IR + Nunchuk)\n");
+                fflush(stdout);
+                [self setRumble:YES]; 
+                usleep(100000); 
+                [self setRumble:NO];
+            } else {
+                // Nunchuk DISCONNECTED - use mode 0x33 (Extended IR only)
+                [self setReportingMode:0x33];
+                printf("\n🔄 Nunchuk Disconnected → Mode 0x33 (Extended IR Only)\n");
+                fflush(stdout);
+                [self setRumble:YES]; 
+                usleep(100000); 
+                [self setRumble:NO];
             }
 
         }

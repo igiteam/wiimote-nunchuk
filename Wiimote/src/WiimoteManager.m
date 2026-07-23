@@ -3,6 +3,104 @@
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+// ============================================
+// KEY CODES - Change these to remap buttons
+// ============================================
+#define KEY_A 0x00
+#define KEY_S 0x01
+#define KEY_D 0x02
+#define KEY_W 0x0D
+#define KEY_Q 0x0C
+#define KEY_E 0x0E
+#define KEY_R 0x0F
+#define KEY_T 0x10
+#define KEY_Y 0x11
+#define KEY_U 0x12
+#define KEY_I 0x13
+#define KEY_O 0x14
+#define KEY_P 0x15
+#define KEY_F 0x03
+#define KEY_G 0x04
+#define KEY_H 0x05
+#define KEY_J 0x06
+#define KEY_K 0x07
+#define KEY_L 0x08
+#define KEY_Z 0x09
+#define KEY_X 0x0A
+#define KEY_C 0x0B
+#define KEY_V 0x1A
+#define KEY_B 0x1B
+#define KEY_N 0x1D
+#define KEY_M 0x1E
+#define KEY_SPACE 0x31
+#define KEY_ENTER 0x24
+#define KEY_ESC 0x35
+#define KEY_UP 0x7E
+#define KEY_DOWN 0x7D
+#define KEY_LEFT 0x7B
+#define KEY_RIGHT 0x7C
+#define KEY_TAB 0x30
+#define KEY_SHIFT 0x38
+#define KEY_CONTROL 0x3B
+#define KEY_OPTION 0x3A
+#define KEY_COMMAND 0x37
+#define KEY_DELETE 0x33
+#define KEY_TILDE 0x32
+#define KEY_STAR 0x2B
+
+// Wiimote Button	Short Press	Long Press	Type
+// Up	R	E	Tap
+// Down	V	M	Tap
+// Left	TAB	*	Tap
+// Right	SPACE	Z	Tap
+// B	Left Mouse (hold)	-	Hold + Mouse
+// A	Q (hold)	-	Hold
+// 1	W	N	Tap
+// 2	G	F	Tap
+// +	B	X	Tap
+// -	R	~	Tap
+// Home	ESC	Center Mouse	Tap + Special
+
+// ============================================
+// BUTTON MAPPINGS - Change these to remap
+// ============================================
+
+#define MAP_DPAD_UP_SHORT KEY_E          // use
+#define MAP_DPAD_UP_LONG  KEY_UP          // up
+
+#define MAP_DPAD_DOWN_SHORT KEY_V        // aim
+#define MAP_DPAD_DOWN_LONG  KEY_DOWN        // down
+
+#define MAP_DPAD_LEFT_SHORT KEY_TAB      // change burst
+#define MAP_DPAD_LEFT_LONG  KEY_TILDE     // command
+
+#define MAP_DPAD_RIGHT_SHORT KEY_SPACE   // free view
+#define MAP_DPAD_RIGHT_LONG  KEY_Z       // 3d person
+
+#define MAP_A_SHORT KEY_Q   // HOLD zoom
+#define MAP_A_LONG  0       // HOLD zoom
+
+#define MAP_B_SHORT 0       // TAP MOUSE (left click)
+#define MAP_B_LONG  0       // HOLD + MOUSE (left click)
+
+#define MAP_MINUS_SHORT KEY_R  // reload
+#define MAP_MINUS_LONG  KEY_G  // 
+
+#define MAP_PLUS_SHORT KEY_B    
+#define MAP_PLUS_LONG  0     // 0 = special action (center mouse)
+
+#define MAP_HOME_SHORT KEY_ESC  // esc game 
+#define MAP_HOME_LONG  KEY_ESC //  esc game (its hard to longpress HOME)
+
+#define MAP_1_SHORT KEY_X
+#define MAP_1_LONG  KEY_N
+
+#define MAP_2_SHORT KEY_G
+#define MAP_2_LONG  KEY_F
+
+// ============================================
+// PSM
+// ============================================
 #define PSM_CTRL 0x11
 #define PSM_INTR 0x13
 #define MAX_RETRIES 5
@@ -30,9 +128,11 @@
 @property (nonatomic, assign) BOOL inquiryActive;
 @property (nonatomic, assign) BOOL reconnecting;
 
-// Button States
-@property (nonatomic, assign) BOOL btnLeft, btnRight, btnDown, btnUp;
-@property (nonatomic, assign) BOOL btnPlus, btnMinus, btnHome, btnA, btnB, btn1, btn2;
+@property (nonatomic, assign) int battery;
+@property (nonatomic, assign) int batteryRaw;
+
+@property (nonatomic, assign) BOOL bRumbleActive;
+@property (nonatomic, strong) NSThread *rumbleThread;
 
 // IR properties
 @property (nonatomic, assign) BOOL irEnabled;
@@ -45,8 +145,84 @@
 @property (nonatomic, assign) BOOL hasSmoothedPos;
 @property (nonatomic, assign) CGRect screenBounds;
 
+// Last display to prevent flicker
+@property (nonatomic, strong) NSString *lastDisplay;
+
+// Wiimote Button States
+@property (nonatomic, assign) BOOL btnLeft, btnRight, btnDown, btnUp;
+@property (nonatomic, assign) BOOL btnPlus, btnMinus, btnHome, btnA, btnB, btn1, btn2;
+
+// Wiimote Button Long Press Tracking
+@property (nonatomic, assign) NSTimeInterval btn1PressTime;
+@property (nonatomic, assign) BOOL btn1WasPressed;
+@property (nonatomic, assign) BOOL btn1Handled;
+
+@property (nonatomic, assign) NSTimeInterval btn2PressTime;
+@property (nonatomic, assign) BOOL btn2WasPressed;
+@property (nonatomic, assign) BOOL btn2Handled;
+
+@property (nonatomic, assign) NSTimeInterval btnAPressTime;
+@property (nonatomic, assign) BOOL btnAWasPressed;
+@property (nonatomic, assign) BOOL btnAHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnBPressTime;
+@property (nonatomic, assign) BOOL btnBWasPressed;
+@property (nonatomic, assign) BOOL btnBHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnHomePressTime;
+@property (nonatomic, assign) BOOL btnHomeWasPressed;
+@property (nonatomic, assign) BOOL btnHomeHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnPlusPressTime;
+@property (nonatomic, assign) BOOL btnPlusWasPressed;
+@property (nonatomic, assign) BOOL btnPlusHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnMinusPressTime;
+@property (nonatomic, assign) BOOL btnMinusWasPressed;
+@property (nonatomic, assign) BOOL btnMinusHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnLeftPressTime;
+@property (nonatomic, assign) BOOL btnLeftWasPressed;
+@property (nonatomic, assign) BOOL btnLeftHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnRightPressTime;
+@property (nonatomic, assign) BOOL btnRightWasPressed;
+@property (nonatomic, assign) BOOL btnRightHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnUpPressTime;
+@property (nonatomic, assign) BOOL btnUpWasPressed;
+@property (nonatomic, assign) BOOL btnUpHandled;
+
+@property (nonatomic, assign) NSTimeInterval btnDownPressTime;
+@property (nonatomic, assign) BOOL btnDownWasPressed;
+@property (nonatomic, assign) BOOL btnDownHandled;
+
+// Nunchuk Button States
+@property (nonatomic, assign) BOOL cPressed;
+@property (nonatomic, assign) BOOL zPressed;
+
+// Nunchuk Button Long Press Tracking
+@property (nonatomic, assign) NSTimeInterval cPressTime;
+@property (nonatomic, assign) BOOL cWasPressed;
+@property (nonatomic, assign) BOOL cHandled;
+
+@property (nonatomic, assign) NSTimeInterval zPressTime;
+@property (nonatomic, assign) BOOL zWasPressed;
+@property (nonatomic, assign) BOOL zHandled;
+
 // Extension
+@property (nonatomic, assign) int statusCount;
+@property (nonatomic, assign) int lf;
+@property (nonatomic, assign) BOOL extConnected;
 @property (nonatomic, assign) BOOL extInitialized;
+@property (nonatomic, assign) int joyX, joyY;
+@property (nonatomic, assign) int joyXCenter;
+@property (nonatomic, assign) int joyYCenter;
+@property (nonatomic, assign) BOOL calibrated;
+@property (nonatomic, assign) int calSamples;
+@property (nonatomic, assign) int calXSum;
+@property (nonatomic, assign) int calYSum;
+@property (nonatomic, assign) BOOL calibrating;
 @end
 
 @implementation WiimoteManager
@@ -60,6 +236,8 @@
         _reconnecting = NO;
         _irBottom = YES;
         _debugIR = YES;
+        _battery = 0;
+        _batteryRaw = 0;
         _sensitivityLevel = 3;
         _frameCount = 0;
         _batteryPercent = 0;
@@ -82,6 +260,14 @@
         fflush(stdout);
     }
     return self;
+}
+
+- (void)rumbleThreadLoop {
+    while (self.bRumbleActive && self.connected) {
+        [self setRumble:YES];
+        usleep(50000); // 50ms
+    }
+    [self setRumble:NO];
 }
 
 - (void)start {
@@ -324,16 +510,55 @@
     fflush(stdout);
 }
 
+
 - (void)initExtension {
     if (self.extInitialized) return;
+    printf("\n========== INIT NUNCHUK ==========\n");
+    fflush(stdout);
+    
+    // Disable encryption
     [self writeMemory:0xA40040 data:[NSData dataWithBytes:"\x00" length:1]];
     usleep(50000);
-    uint8_t key[16] = {0};
+    
+    // Write encryption key
+    uint8_t key[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     [self writeMemory:0xA40040 data:[NSData dataWithBytes:key length:16]];
     usleep(50000);
+    
+    // Enable extension
     [self writeMemory:0xA400F0 data:[NSData dataWithBytes:"\x55" length:1]];
     usleep(50000);
+    
+    // Force mode 0x37 to enable extension data
+    [self setReportingMode:0x37];
+    usleep(50000);
+    
+    [self requestStatus];
+    
     self.extInitialized = YES;
+    printf("[INIT] Nunchuk init complete - Ready for mode switching\n");
+    printf("   Mode 0x33: Extended IR (12-byte) - No Extension\n");
+    printf("   Mode 0x37: Basic IR (10-byte) + Extension\n");
+    printf("==================================\n\n");
+    fflush(stdout);
+}
+
+- (NSString *)buttonString {
+    NSMutableString *str = [NSMutableString string];
+    if (self.btnA) [str appendString:@"A"];
+    if (self.btnB) [str appendString:@"B"];
+    if (self.btn1) [str appendString:@"1"];
+    if (self.btn2) [str appendString:@"2"];
+    if (self.btnPlus) [str appendString:@"+"];
+    if (self.btnMinus) [str appendString:@"-"];
+    if (self.btnHome) [str appendString:@"H"];
+    if (self.btnUp) [str appendString:@"↑"];
+    if (self.btnDown) [str appendString:@"↓"];
+    if (self.btnLeft) [str appendString:@"←"];
+    if (self.btnRight) [str appendString:@"→"];
+    if (str.length == 0) [str appendString:@"-"];
+    return str;
 }
 
 - (void)pollStatus {
@@ -400,25 +625,25 @@
 
 - (void)setReportingMode:(uint8_t)mode {
     if (!self.ctrl) return;
-    
+
     // If switching to mode 0x37, switch IR to Basic Mode (0x01)
     if (mode == 0x37 && self.currentMode != 0x37) {
         printf("[IR] Switching to Basic Mode for 0x37...\n");
         fflush(stdout);
         
         // Disable IR: write 0x00 to 0xB00030
-        uint8_t disableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x00};
-        [self.ctrl writeSync:disableIR length:8];
+        uint8_t zero = 0x00;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&zero length:1]];
         usleep(100000);
         
         // Set IR mode to Basic (0x01) at 0xB00033
-        uint8_t irModeBasic[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x33, 0x01, 0x01};
-        [self.ctrl writeSync:irModeBasic length:8];
+        uint8_t irMode = 0x01;
+        [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
         usleep(100000);
         
         // Re-enable IR: write 0x08 to 0xB00030
-        uint8_t enableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x08};
-        [self.ctrl writeSync:enableIR length:8];
+        uint8_t enableIR = 0x08;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&enableIR length:1]];
         usleep(100000);
     }
     
@@ -428,18 +653,18 @@
         fflush(stdout);
         
         // Disable IR: write 0x00 to 0xB00030
-        uint8_t disableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x00};
-        [self.ctrl writeSync:disableIR length:8];
+        uint8_t zero = 0x00;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&zero length:1]];
         usleep(100000);
         
         // Set IR mode to Extended (0x03) at 0xB00033
-        uint8_t irModeExtended[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x33, 0x01, 0x03};
-        [self.ctrl writeSync:irModeExtended length:8];
+        uint8_t irMode = 0x03;
+        [self writeMemory:0xB00033 data:[NSData dataWithBytes:&irMode length:1]];
         usleep(100000);
         
         // Re-enable IR: write 0x08 to 0xB00030
-        uint8_t enableIR[] = {0xA2, 0x16, 0x04, 0xB0, 0x00, 0x30, 0x01, 0x08};
-        [self.ctrl writeSync:enableIR length:8];
+        uint8_t enableIR = 0x08;
+        [self writeMemory:0xB00030 data:[NSData dataWithBytes:&enableIR length:1]];
         usleep(100000);
     }
     
@@ -508,76 +733,427 @@
     }
 }
 
+- (void)mouseDown:(int)button {
+    CGEventRef event = CGEventCreate(NULL);
+    CGPoint pos = CGEventGetLocation(event);
+    CFRelease(event);
+    int type = button == kCGMouseButtonLeft ? kCGEventLeftMouseDown : 
+               button == kCGMouseButtonRight ? kCGEventRightMouseDown : kCGEventOtherMouseDown;
+    CGEventRef me = CGEventCreateMouseEvent(NULL, type, pos, button);
+    if (me) { CGEventPost(kCGHIDEventTap, me); CFRelease(me); }
+}
+
+- (void)mouseUp:(int)button {
+    CGEventRef event = CGEventCreate(NULL);
+    CGPoint pos = CGEventGetLocation(event);
+    CFRelease(event);
+    int type = button == kCGMouseButtonLeft ? kCGEventLeftMouseUp : 
+               button == kCGMouseButtonRight ? kCGEventRightMouseUp : kCGEventOtherMouseUp;
+    CGEventRef me = CGEventCreateMouseEvent(NULL, type, pos, button);
+    if (me) { CGEventPost(kCGHIDEventTap, me); CFRelease(me); }
+}
+
+ 
+
+- (void)simulateKeyPress:(CGKeyCode)keyCode down:(BOOL)down {
+    [self simulateKeyPress:keyCode down:down withRumble:NO];
+}
+
+- (void)simulateKeyPress:(CGKeyCode)keyCode down:(BOOL)down withRumble:(BOOL)withRumble {
+    // Rumble feedback if requested
+    if (withRumble && down) {
+        [self setRumble:YES];
+        usleep(50000);  // 50ms rumble
+        [self setRumble:NO];
+    }
+    
+    // Send the key event
+    CGEventRef event = CGEventCreateKeyboardEvent(NULL, keyCode, down);
+    if (event) {
+        CGEventPost(kCGHIDEventTap, event);
+        CFRelease(event);
+    }
+}
+
+- (void)centerMouse {
+    // Get the main display bounds
+    CGRect screenBounds = CGDisplayBounds(CGMainDisplayID());
+    
+    // Calculate center point
+    CGPoint centerPoint = CGPointMake(
+        screenBounds.origin.x + screenBounds.size.width / 2,
+        screenBounds.origin.y + screenBounds.size.height / 2
+    );
+    
+    // Move cursor using Quartz
+    CGWarpMouseCursorPosition(centerPoint);
+    
+    // Post OS event so hover effects and UI track smoothly
+    CGEventRef moveEvent = CGEventCreateMouseEvent(
+        NULL,
+        kCGEventMouseMoved,
+        centerPoint,
+        kCGMouseButtonLeft
+    );
+    if (moveEvent) {
+        CGEventPost(kCGHIDEventTap, moveEvent);
+        CFRelease(moveEvent);
+    }
+    
+    printf("\n🎯 Mouse centered at (%.0f, %.0f)\n", centerPoint.x, centerPoint.y);
+    fflush(stdout);
+}
+
 - (void)parseWiimoteButtons:(uint8_t *)data {
-    static BOOL prevBtn1 = NO, prevBtn2 = NO, prevBtnPlus = NO, prevBtnMinus = NO;
-    static BOOL prevBtnHome = NO, prevBtnA = NO;
+    static BOOL prev[11] = {NO};
+    static NSTimeInterval pressTime[11] = {0};
+    static BOOL handled[11] = {NO};
+    static BOOL wasPressed[11] = {NO};
+    
+    // Read button states
+    BOOL current[11] = {
+        (data[0] & 0x08) != 0,  // 0: Dpad_Up
+        (data[0] & 0x04) != 0,  // 1: Dpad_Down
+        (data[0] & 0x01) != 0,  // 2: Dpad_Left
+        (data[0] & 0x02) != 0,  // 3: Dpad_Right
+        (data[1] & 0x04) != 0,  // 4: B
+        (data[1] & 0x08) != 0,  // 5: A
+        (data[1] & 0x10) != 0,  // 6: Minus
+        (data[0] & 0x10) != 0,  // 7: Plus
+        (data[1] & 0x80) != 0,  // 8: Home
+        (data[1] & 0x02) != 0,  // 9: 1
+        (data[1] & 0x01) != 0,  // 10: 2
+    };
+    
+    // ============================================
+    // BUTTON CONFIGURATION TABLE
+    // ============================================
+    // Format: {shortKey, longKey, isHold, isMouse}
+    //
+    // shortKey = key sent on tap (or main key for hold)
+    // longKey  = key sent on long press (>0.5 seconds)
+    // isHold   = 0 = tap mode (press+release) | 1 = hold mode (stays pressed)
+    // isMouse  = 0 = keyboard key | 1 = mouse button
+    // ============================================
 
-    self.btnLeft   = (data[0] & 0x01) != 0;
-    self.btnRight  = (data[0] & 0x02) != 0;
-    self.btnDown   = (data[0] & 0x04) != 0;
-    self.btnUp     = (data[0] & 0x08) != 0;
-    self.btnPlus   = (data[0] & 0x10) != 0;
-
-    self.btn2      = (data[1] & 0x01) != 0;
-    self.btn1      = (data[1] & 0x02) != 0;
-    self.btnB      = (data[1] & 0x04) != 0;
-    self.btnA      = (data[1] & 0x08) != 0;
-    self.btnMinus  = (data[1] & 0x10) != 0;
-    self.btnHome   = (data[1] & 0x80) != 0;
-
-    // BUTTON 1: Mode 0x30
-    if (self.btn1 && !prevBtn1) {
-        [self setReportingMode:0x30];
-        printf("\n🔄 Switched to Mode: 0x30 (Buttons Only)\n");
-        fflush(stdout);
-        [self setRumble:YES]; usleep(100000); [self setRumble:NO];
+    // Button configs: {shortKey, longKey, isHold, isMouse}
+    int configs[11][4] = {
+        {MAP_DPAD_UP_SHORT,     MAP_DPAD_UP_LONG,     0, 0},   // 0: Up
+        {MAP_DPAD_DOWN_SHORT,   MAP_DPAD_DOWN_LONG,   0, 0},   // 1: Down
+        {MAP_DPAD_LEFT_SHORT,   MAP_DPAD_LEFT_LONG,   0, 0},   // 2: Left
+        {MAP_DPAD_RIGHT_SHORT,  MAP_DPAD_RIGHT_LONG,  0, 0},   // 3: Right
+        {MAP_B_SHORT,           MAP_B_LONG,           1, 1},   // 4: B
+        {MAP_A_SHORT,           MAP_A_LONG,           1, 0},   // 5: A
+        {MAP_MINUS_SHORT,       MAP_MINUS_LONG,       0, 0},   // 6: Minus
+        {MAP_PLUS_SHORT,        MAP_PLUS_LONG,        0, 0},   // 7: Plus
+        {MAP_HOME_SHORT,        MAP_HOME_LONG,        0, 0},   // 8: Home
+        {MAP_1_SHORT,           MAP_1_LONG,           0, 0},   // 9: 1
+        {MAP_2_SHORT,           MAP_2_LONG,           0, 0},   // 10: 2
+    };
+    
+    // Button names
+    // Button names - MUST MATCH current[] array order!
+    NSString *names[11] = {
+        @"Up",     // 0
+        @"Down",   // 1
+        @"Left",   // 2
+        @"Right",  // 3
+        @"B",      // 4
+        @"A",      // 5
+        @"Minus",  // 6
+        @"Plus",   // 7
+        @"Home"    // 8
+        @"1",      // 9
+        @"2",      // 10
+    };
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    const NSTimeInterval LONG_PRESS = 0.5;
+    
+    for (int i = 0; i < 11; i++) {
+        int shortKey = configs[i][0];
+        int longKey = configs[i][1];
+        int isHold = configs[i][2];
+        int isMouse = configs[i][3];
+        
+        // HOLD
+        if (isHold) {
+            if (current[i] && !prev[i]) {
+                printf("🔽 %s\n", [names[i] UTF8String]);
+                if (isMouse) {
+                    // Start continuous rumble in background thread
+                    self.bRumbleActive = YES;
+                    self.rumbleThread = [[NSThread alloc] initWithTarget:self 
+                                                                selector:@selector(rumbleThreadLoop) 
+                                                                object:nil];
+                    [self.rumbleThread start];
+                    [self mouseDown:kCGMouseButtonLeft];
+                } else {
+                    [self simulateKeyPress:shortKey down:YES withRumble:NO];
+                    [self setRumble:YES]; // Start continuous rumble
+                }
+                wasPressed[i] = YES;
+            } else if (!current[i] && prev[i]) {
+                printf("🔼 %s\n", [names[i] UTF8String]);
+                if (isMouse) {
+                    // Stop rumble thread
+                    self.bRumbleActive = NO;
+                    self.rumbleThread = nil;
+                    [self setRumble:NO];
+                    [self mouseUp:kCGMouseButtonLeft];
+                } else {
+                    [self setRumble:NO]; // Stop rumble
+                    [self simulateKeyPress:shortKey down:NO withRumble:NO];
+                }
+                wasPressed[i] = NO;
+            }
+            prev[i] = current[i];
+            continue;
+        }
+        
+        // TAP
+        if (current[i] && !prev[i]) {
+            pressTime[i] = now;
+            handled[i] = NO;
+            wasPressed[i] = YES;
+        } else if (current[i] && wasPressed[i] && !handled[i]) {
+            if (now - pressTime[i] >= LONG_PRESS && longKey != 0) {
+                printf("🔽 %s (hold)\n", [names[i] UTF8String]);
+                [self simulateKeyPress:longKey down:YES withRumble:YES];
+                handled[i] = YES;
+            }
+        } else if (!current[i] && wasPressed[i]) {
+            if (!handled[i]) {
+                if (shortKey == 0) {
+                    // SPECIAL ACTIONS
+                    // ============================================
+                    // SPECIAL ACTIONS
+                    // When shortKey = 0, the button triggers a custom action
+                    // defined here instead of sending a key press.
+                    // ============================================
+                    // SPECIAL ACTION: Plus - Center Mouse
+                    if (i == 7) {
+                        [self centerMouse];
+                        [self setRumble:YES]; usleep(100000); [self setRumble:NO];
+                    } else if (i == 9999) {
+                        //HERE DESCRIBE ANY SPECIAL ACTION FOR buttons int 1-10
+                    }
+                } else {
+                    printf("👆 %s\n", [names[i] UTF8String]);
+                    [self simulateKeyPress:shortKey down:YES withRumble:YES];
+                    usleep(50000);
+                    [self simulateKeyPress:shortKey down:NO withRumble:NO];
+                }
+            } else {
+                if (longKey != 0) {
+                    [self simulateKeyPress:longKey down:NO withRumble:NO];
+                }
+            }
+            wasPressed[i] = NO;
+            handled[i] = NO;
+        }
+        prev[i] = current[i];
     }
-    prevBtn1 = self.btn1;
+}
 
-    // BUTTON 2: Mode 0x31
-    if (self.btn2 && !prevBtn2) {
-        [self setReportingMode:0x31];
-        printf("\n🔄 Switched to Mode: 0x31 (Buttons + Accel)\n");
-        fflush(stdout);
-        [self setRumble:YES]; usleep(100000); [self setRumble:NO];
-    }
-    prevBtn2 = self.btn2;
 
-    // PLUS: Mode 0x33
-    if (self.btnPlus && !prevBtnPlus) {
-        [self setReportingMode:0x33];
-        printf("\n🔄 Switched to Mode: 0x33 (Buttons + Accel + 12-byte IR)\n");
+- (void)parseNunchukData:(uint8_t *)decrypted withID:(uint8_t)id andCoreData:(uint8_t *)coreData {
+    // Nunchuk data format:
+    // Byte 0: Joystick X (0-255)
+    // Byte 1: Joystick Y (0-255)
+    // Byte 2: Accel X
+    // Byte 3: Accel Y  
+    // Byte 4: Accel Z
+    // Byte 5: Button bits (bit 0 = Z, bit 1 = C)
+    
+    int rawX = decrypted[0];
+    int rawY = decrypted[1];
+    
+    // PARSE BUTTON STATES FIRST - this is what was missing!
+    BOOL cPressed = ((decrypted[5] & 0x02) == 0);  // C button (bit 1)
+    BOOL zPressed = ((decrypted[5] & 0x01) == 0);  // Z button (bit 0)
+    
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    const NSTimeInterval LONG_PRESS_THRESHOLD = 0.5;
+    
+    // ============================================
+    // NUNCHUK C: HOLD key_lshift (Run)
+    // ============================================
+    if (cPressed && !self.cWasPressed) {
+        // C pressed - HOLD Shift down
+        printf("\n🏃 Run ON (C Hold)\n");
         fflush(stdout);
-        [self setRumble:YES]; usleep(200000); [self setRumble:NO];
+        [self simulateKeyPress:0x38 down:YES withRumble:YES]; // Shift DOWN (hold)
+        self.cWasPressed = YES;
+    } else if (!cPressed && self.cWasPressed) {
+        // C released - Release Shift
+        printf("\n🏃 Run OFF (C Release)\n");
+        fflush(stdout);
+        [self simulateKeyPress:0x38 down:NO withRumble:NO];   // Shift UP (release)
+        self.cWasPressed = NO;
     }
-    prevBtnPlus = self.btnPlus;
+    self.cPressed = cPressed;
+    
+    // ============================================
+    // NUNCHUK Z: SHORT = key_k (Kick), LONG = nothing
+    // ============================================
+    if (zPressed && !self.zWasPressed) {
+        self.zPressTime = now;
+        self.zHandled = NO;
+        self.zWasPressed = YES;
+    } else if (zPressed && self.zWasPressed && !self.zHandled) {
+        NSTimeInterval duration = now - self.zPressTime;
+        if (duration >= LONG_PRESS_THRESHOLD) {
+            // LONG PRESS: Do nothing
+            self.zHandled = YES;
+        }
+    } else if (!zPressed && self.zWasPressed) {
+        if (!self.zHandled) {
+            // SHORT PRESS: key_k (Kick)
+            printf("\n🦶 Kick (Z Short)\n");
+            fflush(stdout);
+            [self simulateKeyPress:0x28 down:YES withRumble:YES]; // K down
+            usleep(50000);
+            [self simulateKeyPress:0x28 down:NO withRumble:NO];   // K up
+        }
+        self.zWasPressed = NO;
+        self.zHandled = NO;
+    }
+    self.zPressed = zPressed;
 
-    // MINUS: Mode 0x37
-    if (self.btnMinus && !prevBtnMinus) {
-        [self setReportingMode:0x37];
-        printf("\n🔄 Switched to Mode: 0x37 (Buttons + Accel + IR + Extension)\n");
+    // Handle Nunchuk calibration
+    if (self.calibrating && self.extConnected) {
+        // Skip extreme values during calibration (joystick at rest should be around 128)
+        if (rawX > 20 && rawX < 235 && rawY > 20 && rawY < 235) {
+            self.calXSum += rawX;
+            self.calYSum += rawY;
+            self.calSamples++;
+        }
+        
+        printf("\r🔧 Calibrating... %d/30", self.calSamples);
         fflush(stdout);
-        [self setRumble:YES]; usleep(200000); [self setRumble:NO];
+        
+        if (self.calSamples >= 30) {
+            self.joyXCenter = self.calXSum / 30;
+            self.joyYCenter = self.calYSum / 30;
+            self.calibrated = YES;
+            self.calibrating = NO;
+            printf("\n✅ Calibration complete!\n");
+            printf("   X Center: %d  Y Center: %d\n\n", self.joyXCenter, self.joyYCenter);
+            fflush(stdout);
+        }
+        return;
     }
-    prevBtnMinus = self.btnMinus;
+    
+    if (!self.calibrated) {
+        // If not calibrated, use default center
+        self.joyXCenter = 128;
+        self.joyYCenter = 128;
+        self.calibrated = YES;
+    }
+    
+    if (coreData) {
+        [self parseWiimoteButtons:coreData];
+    }
+    
+    // Calculate centered values (raw - center)
+    // Nunchuk Y is inverted (up is low values, down is high values)
+    int centeredX = rawX - self.joyXCenter;
+    //int centeredY = -(rawY - self.joyYCenter);  // Invert Y
+    // NEW (correct - no inversion)
+    int centeredY = rawY - self.joyYCenter;
 
-    // HOME: Toggle IR Flip
-    if (self.btnHome && !prevBtnHome) {
-        self.irBottom = !self.irBottom;
-        printf("\n🔄 IR Y-Inversion: %s\n", self.irBottom ? "YES" : "NO");
-        fflush(stdout);
-        [self setRumble:YES]; usleep(150000); [self setRumble:NO];
+    // Apply deadzone
+    int deadzone = 12;
+    if (abs(centeredX) < deadzone) centeredX = 0;
+    if (abs(centeredY) < deadzone) centeredY = 0;
+    
+    // Normalize to -100 to +100 range (instead of raw values)
+    int maxRange = 110;  // Max expected deflection from center
+    self.joyX = (centeredX * 100) / maxRange;
+    self.joyY = (centeredY * 100) / maxRange;
+    
+    // Clamp to -100/+100
+    self.joyX = MAX(-100, MIN(100, self.joyX));
+    self.joyY = MAX(-100, MIN(100, self.joyY));
+    
+    // Determine direction with proper 8-way handling
+    NSString *direction = @"IDLE";
+    if (abs(self.joyX) > 15 || abs(self.joyY) > 15) {
+        float angle = atan2(self.joyY, self.joyX) * 180 / M_PI;
+        
+        // Convert angle to 8 directions
+        if (angle >= -22.5 && angle < 22.5) {
+            direction = @"RIGHT";
+            [self simulateKeyPress:0x02 down:YES];  // D
+            [self simulateKeyPress:0x00 down:NO];   // A off
+            [self simulateKeyPress:0x0D down:NO];   // W off
+            [self simulateKeyPress:0x01 down:NO];   // S off
+        } else if (angle >= 22.5 && angle < 67.5) {
+            direction = @"UP-RIGHT";
+            [self simulateKeyPress:0x0D down:YES];  // W
+            [self simulateKeyPress:0x02 down:YES];  // D
+            [self simulateKeyPress:0x00 down:NO];   // A off
+            [self simulateKeyPress:0x01 down:NO];   // S off
+        } else if (angle >= 67.5 && angle < 112.5) {
+            direction = @"UP";
+            [self simulateKeyPress:0x0D down:YES];  // W
+            [self simulateKeyPress:0x01 down:NO];   // S off
+            [self simulateKeyPress:0x00 down:NO];   // A off
+            [self simulateKeyPress:0x02 down:NO];   // D off
+        } else if (angle >= 112.5 && angle < 157.5) {
+            direction = @"UP-LEFT";
+            [self simulateKeyPress:0x0D down:YES];  // W
+            [self simulateKeyPress:0x00 down:YES];  // A
+            [self simulateKeyPress:0x01 down:NO];   // S off
+            [self simulateKeyPress:0x02 down:NO];   // D off
+        } else if ((angle >= 157.5 && angle <= 180) || (angle >= -180 && angle < -157.5)) {
+            direction = @"LEFT";
+            [self simulateKeyPress:0x00 down:YES];  // A
+            [self simulateKeyPress:0x02 down:NO];   // D off
+            [self simulateKeyPress:0x0D down:NO];   // W off
+            [self simulateKeyPress:0x01 down:NO];   // S off
+        } else if (angle >= -157.5 && angle < -112.5) {
+            direction = @"DOWN-LEFT";
+            [self simulateKeyPress:0x01 down:YES];  // S
+            [self simulateKeyPress:0x00 down:YES];  // A
+            [self simulateKeyPress:0x0D down:NO];   // W off
+            [self simulateKeyPress:0x02 down:NO];   // D off
+        } else if (angle >= -112.5 && angle < -67.5) {
+            direction = @"DOWN";
+            [self simulateKeyPress:0x01 down:YES];  // S
+            [self simulateKeyPress:0x0D down:NO];   // W off
+            [self simulateKeyPress:0x00 down:NO];   // A off
+            [self simulateKeyPress:0x02 down:NO];   // D off
+        } else if (angle >= -67.5 && angle < -22.5) {
+            direction = @"DOWN-RIGHT";
+            [self simulateKeyPress:0x01 down:YES];  // S
+            [self simulateKeyPress:0x02 down:YES];  // D
+            [self simulateKeyPress:0x0D down:NO];   // W off
+            [self simulateKeyPress:0x00 down:NO];   // A off
+        }
+    } else {
+        // IMPORTANT: Release ALL keys when joystick is centered/idle
+        direction = @"IDLE";
+        [self simulateKeyPress:0x0D down:NO];  // W off
+        [self simulateKeyPress:0x00 down:NO];  // A off
+        [self simulateKeyPress:0x01 down:NO];  // S off
+        [self simulateKeyPress:0x02 down:NO];  // D off
     }
-    prevBtnHome = self.btnHome;
-
-    // A: Toggle Debug Prints
-    if (self.btnA && !prevBtnA) {
-        self.debugIR = !self.debugIR;
-        printf("\n🔄 Verbose Debugging: %s\n", self.debugIR ? "ENABLED" : "DISABLED");
+    
+    NSString *buttons = [self buttonString];
+    
+    // Build display with normalized values
+    NSMutableString *display = [NSMutableString string];
+    [display appendFormat:@"[Nunchuk] X:%+3d%% Y:%+3d%% | Dir: %-8@ | Wii: %@ | C:%d Z:%d",
+     self.joyX, self.joyY, direction, buttons, self.cPressed, self.zPressed];
+    
+    // Only update if changed
+    if (![display isEqualToString:self.lastDisplay]) {
+        printf("\r%s   ", [display UTF8String]);
         fflush(stdout);
-        [self setRumble:YES]; usleep(100000); [self setRumble:NO];
+        self.lastDisplay = display;
     }
-    prevBtnA = self.btnA;
 }
 
 - (void)parseExtendedIRData:(uint8_t *)irData length:(int)irLength {
@@ -653,6 +1229,7 @@
 - (void)parseBasicIRData:(uint8_t *)irData length:(int)irLength {
     if (!self.irEnabled) return;
     
+    // Check for invalid data
     BOOL hasData = NO;
     for (int i = 0; i < irLength; i++) {
         if (irData[i] != 0xFF) { hasData = YES; break; }
@@ -665,62 +1242,67 @@
         return;
     }
 
-    // Basic Mode: 10 bytes for 4 objects
-    // Object 1 (P1) - bytes 0-2
-    uint16_t x1 = (irData[0] & 0xFF) | ((irData[2] & 0x0C) << 6);
-    uint16_t y1 = (irData[1] & 0xFF) | ((irData[2] & 0x03) << 8);
+    // CORRECT Basic Mode parsing based on Dolphin's IRBasic struct
     
-    // Object 2 (P2) - bytes 2-4
-    uint16_t x2 = (irData[3] & 0xFF) | ((irData[2] & 0xC0) << 2);
-    uint16_t y2 = (irData[4] & 0xFF) | ((irData[2] & 0x30) << 4);
-    
-    // Object 3 (P3) - bytes 5-7 ← THIS IS THE REAL TRACKING DATA!
-    uint16_t x3 = (irData[5] & 0xFF) | ((irData[7] & 0x0C) << 6);
-    uint16_t y3 = (irData[6] & 0xFF) | ((irData[7] & 0x03) << 8);
-    
-    // Object 4 (P4) - bytes 7-9
-    uint16_t x4 = (irData[8] & 0xFF) | ((irData[7] & 0xC0) << 2);
-    uint16_t y4 = (irData[9] & 0xFF) | ((irData[7] & 0x30) << 4);
-    
-    // Map P3 to P1 for mouse tracking (P3 has the real data)
-    if (x3 <= 1023 && y3 <= 767 && x3 != 0 && y3 != 0) {
-        self.irX1 = x3;
-        self.irY1 = y3;
+    // Object 1 - uses x1hi (bits 4-5) and y1hi (bits 6-7)
+    if (irData[0] != 0xFF || irData[1] != 0xFF) {
+        uint16_t x = irData[0] | ((irData[2] & 0x30) << 4);  // 0x30 << 4 = 0x300
+        uint16_t y = irData[1] | ((irData[2] & 0xC0) << 2);  // 0xC0 << 2 = 0x300
+        self.irX1 = x;
+        self.irY1 = y;
         self.irSize1 = 0;
     } else {
         self.irX1 = -1;
         self.irY1 = -1;
     }
-    
-    // Map P4 to P2 if it's valid
-    if (x4 <= 1023 && y4 <= 767 && x4 != 0 && y4 != 0) {
-        self.irX2 = x4;
-        self.irY2 = y4;
+
+    // Object 2 - uses x2hi (bits 0-1) and y2hi (bits 2-3)
+    if (irData[3] != 0xFF || irData[4] != 0xFF) {
+        uint16_t x = irData[3] | ((irData[2] & 0x03) << 8);  // 0x03 << 8 = 0x300
+        uint16_t y = irData[4] | ((irData[2] & 0x0C) << 6);  // 0x0C << 6 = 0x300
+        self.irX2 = x;
+        self.irY2 = y;
         self.irSize2 = 0;
     } else {
         self.irX2 = -1;
         self.irY2 = -1;
     }
-    
-    // Clear P3 and P4
-    self.irX3 = self.irX4 = -1;
-    self.irY3 = self.irY4 = -1;
-    self.irSize3 = self.irSize4 = 0;
 
-    // Update mouse position
+    // Object 3 - uses x1hi (bits 4-5) and y1hi (bits 6-7) of byte7
+    if (irData[5] != 0xFF || irData[6] != 0xFF) {
+        uint16_t x = irData[5] | ((irData[7] & 0x30) << 4);
+        uint16_t y = irData[6] | ((irData[7] & 0xC0) << 2);
+        self.irX3 = x;
+        self.irY3 = y;
+        self.irSize3 = 0;
+    } else {
+        self.irX3 = -1;
+        self.irY3 = -1;
+    }
+
+    // Object 4 - uses x2hi (bits 0-1) and y2hi (bits 2-3) of byte7
+    if (irData[8] != 0xFF || irData[9] != 0xFF) {
+        uint16_t x = irData[8] | ((irData[7] & 0x03) << 8);
+        uint16_t y = irData[9] | ((irData[7] & 0x0C) << 6);
+        self.irX4 = x;
+        self.irY4 = y;
+        self.irSize4 = 0;
+    } else {
+        self.irX4 = -1;
+        self.irY4 = -1;
+    }
+
+    if (self.debugIR) {
+        printf("[IR Basic Parsed] P1:(%d,%d) P2:(%d,%d) P3:(%d,%d) P4:(%d,%d)\n", 
+               self.irX1, self.irY1, self.irX2, self.irY2, 
+               self.irX3, self.irY3, self.irX4, self.irY4);
+        fflush(stdout);
+    }
+
+    // Use P1 and P2 for mouse tracking (the sensor bar dots)
     [self updateQuartzMousePosition];
 
     self.frameCount++;
-
-    if (self.debugIR && (self.frameCount % 5 == 0)) {
-        printf("[IR - Mode 0x%02X] Dots: ", self.currentMode);
-        int dots = 0;
-        if (self.irX1 != -1) { printf("P1:(%d,%d) ", self.irX1, self.irY1); dots++; }
-        if (self.irX2 != -1) { printf("P2:(%d,%d) ", self.irX2, self.irY2); dots++; }
-        if (dots == 0) printf("None");
-        printf("\n");
-        fflush(stdout);
-    }
 }
 
 - (void)l2capChannelData:(IOBluetoothL2CAPChannel *)ch data:(void *)dp length:(size_t)len {
@@ -729,6 +1311,7 @@
 
     uint8_t reportID = d[1];
     uint8_t *payload = d + 2;
+    uint8_t id = d[1];
 
     // Parse button updates across all report modes
     if (len >= 4) {
@@ -739,11 +1322,84 @@
     if (reportID == 0x33 && len >= 17) {
         // Mode 0x33: 2-byte Buttons + 3-byte Accel + 12-byte Extended IR
         [self parseExtendedIRData:payload + 5 length:12];
-    } else if (reportID == 0x37 && len >= 23) {
-        // Mode 0x37: 2-byte Buttons + 3-byte Accel + 10-byte Basic IR + 6-byte Extenstion
+    } else if (reportID == 0x37 && len >= 21) {
+        // Mode 0x37: 2-byte Buttons + 3-byte Accel + 10-byte Basic IR + 6-byte Extension
         [self parseBasicIRData:payload + 5 length:10];
     } else if (reportID == 0x20 && len >= 8) {
         self.batteryPercent = (payload[5] * 100) / 0xC0;
+    }
+
+    if (id == 0x20 && len >= 8) {
+        self.lf = d[4];
+        self.batteryRaw = d[7];
+        self.battery = (self.batteryRaw * 100) / 0xC0;
+        self.statusCount++;
+        
+        BOOL extConnected = (self.lf & 0x02) != 0;
+        if (extConnected != self.extConnected) {
+            self.extConnected = extConnected;
+            printf("\n[STATUS] NUNCHUK %s (LF:0x%02X, Battery:%d%%)\n", 
+                   extConnected ? "CONNECTED" : "DISCONNECTED", self.lf, self.battery);
+            fflush(stdout);
+            
+            if (extConnected) {
+                // Nunchuk CONNECTED - use mode 0x37 (Basic IR + Extension)
+                [self setReportingMode:0x37];
+                printf("\n🔄 Nunchuk Connected → Mode 0x37 (Basic IR + Nunchuk)\n");
+                fflush(stdout);
+                [self setRumble:YES]; 
+                usleep(100000); 
+                [self setRumble:NO];
+            } else {
+                // Nunchuk DISCONNECTED - use mode 0x33 (Extended IR only)
+                [self setReportingMode:0x33];
+                printf("\n🔄 Nunchuk Disconnected → Mode 0x33 (Extended IR Only)\n");
+                fflush(stdout);
+                [self setRumble:YES]; 
+                usleep(100000); 
+                [self setRumble:NO];
+            }
+
+        }
+        return;
+    }
+    
+
+    if (id == 0x35 || id == 0x37) {
+        uint8_t *data;
+        int extOffset;
+        
+        if (id == 0x35) {
+            extOffset = 5;
+        } else {
+            extOffset = 17;
+        }
+        
+        if (len < extOffset + 6) return;
+        
+        uint8_t *coreData = d + 2;
+        data = d + extOffset;
+        
+        
+        int encrypted = 1;
+        for (int i = 0; i < 6; i++) {
+            if (data[i] != 0x17 && data[i] != 0x00 && data[i] != 0xFF) {
+                encrypted = 0;
+                break;
+            }
+        }
+        
+        uint8_t decrypted[6];
+        for (int i = 0; i < 6; i++) {
+            decrypted[i] = data[i];
+        }
+        if (encrypted) {
+            for (int i = 0; i < 6; i++) {
+                decrypted[i] = (data[i] ^ 0x17) + 0x17;
+            }
+        }
+        
+        [self parseNunchukData:decrypted withID:id andCoreData:coreData];
     }
 }
 
