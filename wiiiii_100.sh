@@ -166,7 +166,8 @@ cat > "src/WiimoteManager.m" << 'EOF'
 @property (nonatomic, assign) int battery;
 @property (nonatomic, assign) int batteryRaw;
 
-@property (nonatomic, assign) BOOL rumbleActive;
+@property (nonatomic, assign) BOOL bRumbleActive;
+@property (nonatomic, strong) NSThread *rumbleThread;
 
 // IR properties
 @property (nonatomic, assign) BOOL irEnabled;
@@ -270,7 +271,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
         _reconnecting = NO;
         _irBottom = YES;
         _debugIR = YES;
-        _rumbleActive = NO;
         _battery = 0;
         _batteryRaw = 0;
         _sensitivityLevel = 3;
@@ -295,6 +295,14 @@ cat > "src/WiimoteManager.m" << 'EOF'
         fflush(stdout);
     }
     return self;
+}
+
+- (void)rumbleThreadLoop {
+    while (self.bRumbleActive && self.connected) {
+        [self setRumble:YES];
+        usleep(50000); // 50ms
+    }
+    [self setRumble:NO];
 }
 
 - (void)start {
@@ -593,12 +601,6 @@ cat > "src/WiimoteManager.m" << 'EOF'
         [self reconnect];
         return;
     }
-    
-    // Keep rumble alive if active
-    if (self.rumbleActive) {
-        [self setRumble:YES];
-    }
-    
     [self requestStatus];
 }
 
@@ -871,23 +873,33 @@ cat > "src/WiimoteManager.m" << 'EOF'
 
     // Button configs: {shortKey, longKey, isHold, isMouse}
     int configs[11][4] = {
-        {MAP_DPAD_UP_SHORT,     MAP_DPAD_UP_LONG,     0, 0},   // Up
-        {MAP_DPAD_DOWN_SHORT,   MAP_DPAD_DOWN_LONG,   0, 0},   // Down
-        {MAP_DPAD_LEFT_SHORT,   MAP_DPAD_LEFT_LONG,   0, 0},   // Left
-        {MAP_DPAD_RIGHT_SHORT,  MAP_DPAD_RIGHT_LONG,  0, 0},   // Right
-        {MAP_B_SHORT,      MAP_B_LONG,      1, 1},   // B (hold) LeftMouse
-        {MAP_A_SHORT,      MAP_A_LONG,      1, 0},   // A (hold)
-        {MAP_1_SHORT,      MAP_1_LONG,      0, 0},   // 1
-        {MAP_2_SHORT,      MAP_2_LONG,      0, 0},   // 2
-        {MAP_PLUS_SHORT,   MAP_PLUS_LONG,   0, 0},   // Plus
-        {MAP_MINUS_SHORT,  MAP_MINUS_LONG,  0, 0},   // Minus
-        {MAP_HOME_SHORT,   MAP_HOME_LONG,   0, 0},   // Home
+        {MAP_DPAD_UP_SHORT,     MAP_DPAD_UP_LONG,     0, 0},   // 0: Up
+        {MAP_DPAD_DOWN_SHORT,   MAP_DPAD_DOWN_LONG,   0, 0},   // 1: Down
+        {MAP_DPAD_LEFT_SHORT,   MAP_DPAD_LEFT_LONG,   0, 0},   // 2: Left
+        {MAP_DPAD_RIGHT_SHORT,  MAP_DPAD_RIGHT_LONG,  0, 0},   // 3: Right
+        {MAP_B_SHORT,           MAP_B_LONG,           1, 1},   // 4: B
+        {MAP_A_SHORT,           MAP_A_LONG,           1, 0},   // 5: A
+        {MAP_1_SHORT,           MAP_1_LONG,           0, 0},   // 6: 1
+        {MAP_2_SHORT,           MAP_2_LONG,           0, 0},   // 7: 2
+        {MAP_PLUS_SHORT,        MAP_PLUS_LONG,        0, 0},   // 8: Plus
+        {MAP_MINUS_SHORT,       MAP_MINUS_LONG,       0, 0},   // 9: Minus
+        {MAP_HOME_SHORT,        MAP_HOME_LONG,        0, 0},   // 10: Home
     };
     
     // Button names
+    // Button names - MUST MATCH current[] array order!
     NSString *names[11] = {
-        @"Left", @"Right", @"Down", @"Up", @"Plus", 
-        @"2", @"1", @"B", @"A", @"Minus", @"Home"
+        @"Up",     // 0
+        @"Down",   // 1
+        @"Left",   // 2
+        @"Right",  // 3
+        @"B",      // 4
+        @"A",      // 5
+        @"1",      // 6
+        @"2",      // 7
+        @"Plus",   // 8
+        @"Minus",  // 9
+        @"Home"    // 10
     };
     
     NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
@@ -904,22 +916,28 @@ cat > "src/WiimoteManager.m" << 'EOF'
             if (current[i] && !prev[i]) {
                 printf("🔽 %s\n", [names[i] UTF8String]);
                 if (isMouse) {
-                    self.rumbleActive = YES;  // Start continuous rumble
-                    [self setRumble:YES];
+                    // Start continuous rumble in background thread
+                    self.bRumbleActive = YES;
+                    self.rumbleThread = [[NSThread alloc] initWithTarget:self 
+                                                                selector:@selector(rumbleThreadLoop) 
+                                                                object:nil];
+                    [self.rumbleThread start];
                     [self mouseDown:kCGMouseButtonLeft];
                 } else {
-                    self.rumbleActive = YES;  // Start continuous rumble
-                    [self setRumble:YES];
                     [self simulateKeyPress:shortKey down:YES withRumble:NO];
+                    [self setRumble:YES]; // Start continuous rumble
                 }
                 wasPressed[i] = YES;
             } else if (!current[i] && prev[i]) {
                 printf("🔼 %s\n", [names[i] UTF8String]);
-                self.rumbleActive = NO;  // Stop rumble
-                [self setRumble:NO];
                 if (isMouse) {
+                    // Stop rumble thread
+                    self.bRumbleActive = NO;
+                    self.rumbleThread = nil;
+                    [self setRumble:NO];
                     [self mouseUp:kCGMouseButtonLeft];
                 } else {
+                    [self setRumble:NO]; // Stop rumble
                     [self simulateKeyPress:shortKey down:NO withRumble:NO];
                 }
                 wasPressed[i] = NO;
