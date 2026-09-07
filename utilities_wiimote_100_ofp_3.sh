@@ -1,3 +1,39 @@
+#!/bin/bash
+# Wiimote - IR DEBUGGER WITH DYNAMIC MODE SWITCHING & QUARTZ MOUSE MOVEMENT
+
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║      WIIMOTE - DYNAMIC MODE SWITCHER & QUARTZ MOUSE MOVE       ║"
+echo "║            HOT-SWAP REPORT MODES (1, 2, +, -, Home, A)        ║"
+echo "╚════════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+APP_NAME="Wiimote"
+BUNDLE_ID="com.github.wiimote"
+
+rm -rf "$APP_NAME"
+mkdir -p "$APP_NAME"/src
+cd "$APP_NAME" || exit
+
+cat > "src/WiimoteManager.h" << 'EOF'
+#import <Foundation/Foundation.h>
+
+@interface WiimoteManager : NSObject
+@property (nonatomic, assign) uint8_t currentMode;
+- (void)start;
+- (void)stop;
+@end
+EOF
+
+cat > "src/WiimoteManager.m" << 'EOF'
 #import "WiimoteManager.h"
 #import <IOBluetooth/IOBluetooth.h>
 #import <AppKit/AppKit.h>
@@ -1564,3 +1600,178 @@
     [self disconnect];
 }
 @end
+EOF
+
+cat > "src/AppDelegate.h" << 'EOF'
+#import <Cocoa/Cocoa.h>
+@interface AppDelegate : NSObject <NSApplicationDelegate>
+@end
+EOF
+
+cat > "src/AppDelegate.m" << 'EOF'
+#import "AppDelegate.h"
+#import "WiimoteManager.h"
+
+@interface AppDelegate ()
+@property (nonatomic, strong) NSStatusItem *statusItem;
+@property (nonatomic, strong) WiimoteManager *wiimoteManager;
+@property (nonatomic, strong) NSMenuItem *toggleMenuItem;
+@property (nonatomic, assign) BOOL isActive;
+@end
+
+@implementation AppDelegate
+- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    self.wiimoteManager = [[WiimoteManager alloc] init];
+    self.isActive = NO;
+    self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+    self.statusItem.button.title = @"🎮";
+    
+    NSMenu *menu = [[NSMenu alloc] init];
+    self.toggleMenuItem = [[NSMenuItem alloc] initWithTitle:@"Start Wiimote"
+                                                      action:@selector(toggleWiimote:)
+                                               keyEquivalent:@"s"];
+    self.toggleMenuItem.target = self;
+    [menu addItem:self.toggleMenuItem];
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:@"Quit"
+                                                       action:@selector(quitApp:)
+                                                keyEquivalent:@"q"];
+    quitItem.target = self;
+    [menu addItem:quitItem];
+    self.statusItem.menu = menu;
+    
+    [self performSelector:@selector(autoStart) withObject:nil afterDelay:0.5];
+}
+
+- (void)autoStart {
+    self.isActive = YES;
+    [self.wiimoteManager start];
+    self.toggleMenuItem.title = @"Stop Wiimote";
+}
+
+- (void)toggleWiimote:(id)sender {
+    self.isActive = !self.isActive;
+    if (self.isActive) {
+        [self.wiimoteManager start];
+        self.toggleMenuItem.title = @"Stop Wiimote";
+    } else {
+        [self.wiimoteManager stop];
+        self.toggleMenuItem.title = @"Start Wiimote";
+    }
+}
+
+- (void)quitApp:(id)sender {
+    [self.wiimoteManager stop];
+    [NSApp terminate:nil];
+}
+@end
+EOF
+
+cat > "src/main.m" << 'EOF'
+#import <Cocoa/Cocoa.h>
+#import "AppDelegate.h"
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        NSApplication *app = [NSApplication sharedApplication];
+        AppDelegate *delegate = [[AppDelegate alloc] init];
+        app.delegate = delegate;
+        [app run];
+    }
+    return 0;
+}
+EOF
+
+# Build & Package Execution
+echo -e "${CYAN}🔨 Compiling App Bundle with Quartz CoreGraphics support...${NC}"
+
+APP_BUNDLE="$APP_NAME.app"
+rm -rf "$APP_BUNDLE"
+mkdir -p "$APP_BUNDLE/Contents/"{MacOS,Resources}
+
+cat > "Info.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>$APP_NAME</string>
+    <key>CFBundleDisplayName</key>
+    <string>$APP_NAME</string>
+    <key>CFBundleIdentifier</key>
+    <string>$BUNDLE_ID</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$APP_NAME</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Wiimote needs Bluetooth</string>
+</dict>
+</plist>
+EOF
+
+cp "Info.plist" "$APP_BUNDLE/Contents/"
+
+clang -framework Cocoa -framework Foundation -framework AppKit -framework CoreGraphics -framework IOBluetooth -framework Carbon -fobjc-arc -Wno-deprecated-declarations -mmacosx-version-min=11.0 -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" src/*.m 2> build_errors.log
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Compilation successful!${NC}"
+else
+    echo -e "${RED}❌ Compilation failed:${NC}"
+    cat build_errors.log
+    exit 1
+fi
+
+codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+xattr -cr "$APP_BUNDLE"
+
+cp -R "$APP_BUNDLE" "$HOME/Applications/" 2>/dev/null || true
+cp -R "$APP_BUNDLE" "$HOME/Desktop/" 2>/dev/null || true
+
+echo -e "\n${GREEN}🚀 Application compiled and ready with Quartz Mouse Support!${NC}"
+echo -e "${CYAN}Run directly with:${NC}"
+echo -e "   $APP_BUNDLE/Contents/MacOS/$APP_NAME\n"
+
+# The Complete Package:
+#     ✅ IR Mouse Control - Smooth Quartz-based cursor tracking
+#     ✅ Dynamic Mode Switching - Hot-swap between report modes
+#     ✅ Full Button Mapping - All Wiimote and Nunchuk buttons
+#     ✅ Long Press / Hold Support - Short tap vs hold actions
+#     ✅ Nunchuk WASD - 8-directional movement
+#     ✅ A = Zoom (hold Q)
+#     ✅ B = Fire (hold left mouse click)
+#     ✅ All OFP mappings - Map, compass, watch, binoculars, etc.
+
+# The Button Layout for OFP:
+# Button	Action
+# 1	Watch (tap) / Nightvision (hold)
+# 2	Compass (tap) / Flashlight (hold)
+# +	Toggle IR Debug
+# -	Center Mouse (tap) / Tactical View (hold)
+# Home	Toggle IR Inversion
+# A	Zoom / Aim (hold)
+# B	Fire (hold)
+# Up	Action (tap) / Binoculars (hold)
+# Down	Scope (tap) / Map (hold)
+# Left	Toggle Weapon (tap) / Command Menu (hold)
+# Right	Freelook (tap) / 1st/3rd Toggle (hold)
+# C	Run (hold)
+# Z	Kick (tap)
+# What You've Achieved:
+
+# 7 months of hard work finally paid off! You've built something that:
+#     Works natively on macOS with CoreGraphics
+#     Supports both Wiimote and Nunchuk simultaneously
+#     Has proper IR parsing with dynamic mode switching
+#     Maps perfectly to Operation Flashpoint controls
+#     Includes rumble feedback
+#     Is a complete menu bar app
+
+# Now go enjoy some Operation Flashpoint! 🎮💥
