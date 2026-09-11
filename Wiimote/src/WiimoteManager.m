@@ -477,52 +477,114 @@
     if (self.connecting || self.connected) return;
     self.connecting = YES;
     self.device = device;
-    printf("[Wiimote] Connecting to clone Wiimote...\n");
-    printf("[Wiimote] Make sure Wiimote is flashing (1+2 or SYNC button)\n");
+    printf("[Wiimote] Connecting to %s...\n", [[device name] UTF8String] ?: "Unknown");
     fflush(stdout);
     
-    // Give the Wiimote time to be ready
-    usleep(1000000); // 1 second delay
+    // Step 1: Check if device is already connected
+    if ([device isConnected]) {
+        printf("[Wiimote] Device is already connected! Closing...\n");
+        [device closeConnection];
+        usleep(500000);
+    }
     
-    // Try multiple times with increasing delays
-    for (int attempt = 0; attempt < 3; attempt++) {
-        printf("[Wiimote] Attempt %d...\n", attempt + 1);
+    // Step 2: Try to open device connection
+    printf("[Wiimote] Step 1: Opening device connection...\n");
+    IOReturn r = [device openConnection];
+    printf("[Wiimote] openConnection result: 0x%08x (%s)\n", r, 
+           r == kIOReturnSuccess ? "SUCCESS" : "FAILED");
+    fflush(stdout);
+    
+    if (r == kIOReturnSuccess) {
+        printf("[Wiimote] ✅ Device connection opened\n");
+        usleep(1000000);
+    } else {
+        printf("[Wiimote] ⚠️ openConnection failed, but continuing...\n");
+    }
+    
+    // Step 3: Try to open Control Channel
+    printf("[Wiimote] Step 2: Opening Control Channel (PSM 0x11)...\n");
+    IOBluetoothL2CAPChannel *c = nil;
+    r = [device openL2CAPChannelSync:&c withPSM:PSM_CTRL delegate:self];
+    printf("[Wiimote] Control channel result: 0x%08x (%s)\n", r, 
+           r == kIOReturnSuccess ? "SUCCESS" : "FAILED");
+    fflush(stdout);
+    
+    if (r == kIOReturnSuccess && c) {
+        printf("[Wiimote] ✅ Control channel opened\n");
+        self.ctrl = c;
         
-        IOBluetoothL2CAPChannel *c = nil;
-        IOReturn r = [device openL2CAPChannelSync:&c withPSM:PSM_CTRL delegate:self];
+        printf("[Wiimote] Step 3: Sending handshake...\n");
+        uint8_t h[] = {0x43, 0x00};
+        [self.ctrl writeSync:h length:2];
+        usleep(100000);
+        printf("[Wiimote] ✅ Handshake sent\n");
+        
+        printf("[Wiimote] Step 4: Opening Interrupt Channel (PSM 0x13)...\n");
+        IOBluetoothL2CAPChannel *ic = nil;
+        r = [device openL2CAPChannelSync:&ic withPSM:PSM_INTR delegate:self];
+        printf("[Wiimote] Interrupt channel result: 0x%08x (%s)\n", r, 
+               r == kIOReturnSuccess ? "SUCCESS" : "FAILED");
+        fflush(stdout);
+        
+        if (r == kIOReturnSuccess && ic) {
+            printf("[Wiimote] ✅ Interrupt channel opened\n");
+            self.intr = ic;
+            self.connecting = NO;
+            self.connected = YES;
+            self.reconnecting = NO;
+            printf("[Wiimote] ✅✅✅ CONNECTED! ✅✅✅\n");
+            fflush(stdout);
+            [self onConnected];
+            return;
+        } else {
+            printf("[Wiimote] ❌ Interrupt channel failed\n");
+            [self.ctrl closeChannel];
+            self.ctrl = nil;
+        }
+    } else {
+        printf("[Wiimote] ❌ Control channel failed\n");
+        
+        printf("[Wiimote] Step 5: Trying alternative PSM (0x13 for control)...\n");
+        c = nil;
+        r = [device openL2CAPChannelSync:&c withPSM:0x13 delegate:self];
+        printf("[Wiimote] Alternative control result: 0x%08x\n", r);
+        fflush(stdout);
         
         if (r == kIOReturnSuccess && c) {
-            printf("[Wiimote] ✅ Control channel opened\n");
+            printf("[Wiimote] ✅ Alternative control channel opened (0x13)\n");
             self.ctrl = c;
-            
-            // Send handshake
             uint8_t h[] = {0x43, 0x00};
             [self.ctrl writeSync:h length:2];
             usleep(100000);
             
+            printf("[Wiimote] Step 6: Opening interrupt with PSM 0x11...\n");
             IOBluetoothL2CAPChannel *ic = nil;
-            r = [device openL2CAPChannelSync:&ic withPSM:PSM_INTR delegate:self];
+            r = [device openL2CAPChannelSync:&ic withPSM:0x11 delegate:self];
+            printf("[Wiimote] Alternative interrupt result: 0x%08x\n", r);
+            fflush(stdout);
             
             if (r == kIOReturnSuccess && ic) {
-                printf("[Wiimote] ✅ Interrupt channel opened\n");
+                printf("[Wiimote] ✅ Alternative interrupt opened (0x11)\n");
                 self.intr = ic;
                 self.connecting = NO;
                 self.connected = YES;
                 self.reconnecting = NO;
-                printf("[Wiimote] ✅ CONNECTED!\n");
+                printf("[Wiimote] ✅✅✅ CONNECTED! (alternative) ✅✅✅\n");
+                fflush(stdout);
                 [self onConnected];
                 return;
             }
-            
-            // Clean up if interrupt failed
-            [self.ctrl closeChannel];
-            self.ctrl = nil;
         }
-        
-        printf("[Wiimote] Attempt %d failed, retrying...\n", attempt + 1);
-        usleep(1000000); // Wait 1 second between attempts
     }
     
+    printf("[Wiimote] ❌ ALL CONNECTION METHODS FAILED\n");
+    printf("[Wiimote] This is likely the Bluetooth 2.1 compatibility issue on newer Macs\n");
+    fflush(stdout);
+    
+    if (c) [c closeChannel];
+    self.ctrl = nil;
+    self.intr = nil;
+    [device closeConnection];
     self.connecting = NO;
     [self connectionFailed];
 }
