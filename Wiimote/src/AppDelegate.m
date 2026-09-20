@@ -13,7 +13,7 @@
     self.wiimoteManager = [[WiimoteManager alloc] init];
     self.isActive = NO;
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-    self.statusItem.button.title = @"🎮";
+    self.statusItem.button.title = @"⇪(1)";
     
     NSMenu *menu = [[NSMenu alloc] init];
     self.toggleMenuItem = [[NSMenuItem alloc] initWithTitle:@"Start Wiimote"

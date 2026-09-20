@@ -23,6 +23,54 @@ rm -rf "$APP_NAME"
 mkdir -p "$APP_NAME"/src
 cd "$APP_NAME" || exit
 
+# ===============================================
+# DOWNLOAD APP ICON
+# ===============================================
+echo -e "${CYAN}🎨 Downloading Wiimote icon...${NC}"
+
+ICON_URL="https://raw.githubusercontent.com/igiteam/wiimote-nunchuk/main/wiimote-cursor.png"
+
+mkdir -p "public"
+echo "📥 Downloading icon from: $ICON_URL"
+curl -s -L "$ICON_URL" -o "public/app_icon.png"
+
+if [ -f "public/app_icon.png" ] && [ -s "public/app_icon.png" ]; then
+    echo "✅ Icon downloaded successfully!"
+
+    ICONSET_DIR="public/AppIcon.iconset"
+    rm -rf "$ICONSET_DIR"
+    mkdir -p "$ICONSET_DIR"
+
+    sips -z 16   16   "public/app_icon.png" --out "$ICONSET_DIR/icon_16x16.png"      >/dev/null 2>&1
+    sips -z 32   32   "public/app_icon.png" --out "$ICONSET_DIR/icon_16x16@2x.png"   >/dev/null 2>&1
+    sips -z 32   32   "public/app_icon.png" --out "$ICONSET_DIR/icon_32x32.png"      >/dev/null 2>&1
+    sips -z 64   64   "public/app_icon.png" --out "$ICONSET_DIR/icon_32x32@2x.png"   >/dev/null 2>&1
+    sips -z 128  128  "public/app_icon.png" --out "$ICONSET_DIR/icon_128x128.png"    >/dev/null 2>&1
+    sips -z 256  256  "public/app_icon.png" --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null 2>&1
+    sips -z 256  256  "public/app_icon.png" --out "$ICONSET_DIR/icon_256x256.png"    >/dev/null 2>&1
+    sips -z 512  512  "public/app_icon.png" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null 2>&1
+    sips -z 512  512  "public/app_icon.png" --out "$ICONSET_DIR/icon_512x512.png"    >/dev/null 2>&1
+    sips -z 1024 1024 "public/app_icon.png" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null 2>&1
+
+    if command -v iconutil &> /dev/null && \
+       iconutil -c icns "$ICONSET_DIR" -o "public/app_icon.icns" 2>/dev/null; then
+        echo "✅ Created .icns file"
+    else
+        echo "⚠ iconutil failed, falling back to PNG"
+        cp "public/app_icon.png" "public/app_icon.icns"
+    fi
+
+    rm -rf "$ICONSET_DIR"
+else
+    echo "⚠ Download failed, creating fallback icon"
+    cat > public/app_icon.png.b64 << 'EOF'
+iVBORw0KGgoAAAANSUhEUgAAAgAAAAIAAQMAAADOtgr5AAAAAXNSR0IB2cksfwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAANQTFRFAAAAp3o92gAAABxJREFUeJztwTEBAAAAwqD1T20Hb6AAAAAAAAA+Bhw4AAG1cXrRAAAAAElFTkSuQmCC
+EOF
+    base64 -D < public/app_icon.png.b64 > public/app_icon.png 2>/dev/null || true
+    cp public/app_icon.png public/app_icon.icns 2>/dev/null || true
+    echo -e "${GREEN}✅ Created fallback icon${NC}"
+fi
+
 cat > "src/WiimoteManager.h" << 'EOF'
 #import <Foundation/Foundation.h>
 
@@ -1769,6 +1817,8 @@ cat > "Info.plist" << EOF
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>$APP_NAME</string>
+    <key>CFBundleIconFile</key>
+    <string>app_icon</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>LSUIElement</key>
@@ -1780,6 +1830,14 @@ cat > "Info.plist" << EOF
 EOF
 
 cp "Info.plist" "$APP_BUNDLE/Contents/"
+if [ -f "public/app_icon.icns" ]; then
+    cp "public/app_icon.icns" "$APP_BUNDLE/Contents/Resources/app_icon.icns"
+    echo "✅ App icon added to bundle (ICNS)"
+elif [ -f "public/app_icon.png" ]; then
+    cp "public/app_icon.png" "$APP_BUNDLE/Contents/Resources/app_icon.png"
+    echo "✅ App icon added to bundle (PNG)"
+fi
+
 
 clang -framework Cocoa -framework Foundation -framework AppKit -framework CoreGraphics -framework IOBluetooth -framework Carbon -fobjc-arc -Wno-deprecated-declarations -mmacosx-version-min=11.0 -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" src/*.m 2> build_errors.log
 
